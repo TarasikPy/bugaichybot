@@ -1,15 +1,25 @@
+import re
 from datetime import datetime
 from config.names import MALE_NAMES_DECLENSION, FEMALE_NAMES_DECLENSION
 from config.levels import RELATIONSHIP_LEVELS
 
+def escape_markdown(text: str) -> str:
+    """Екранує спеціальні символи Markdown (наприклад, _, *, [, ], `)"""
+    if not text:
+        return ""
+    return re.sub(r'([_*`\[\]])', r'\\\1', str(text))
+
 def decline_name(name: str) -> str:
-    """Відмінює ім'я з називного у знахідний відмінок, підтримка будь-яких імен"""
+    """Відмінює ім'я з називного у знахідний відмінок, підтримка будь-яких імен та юзернеймів"""
+    if not name:
+        return ""
+
     if name in MALE_NAMES_DECLENSION:
         return MALE_NAMES_DECLENSION[name]
     elif name in FEMALE_NAMES_DECLENSION:
         return FEMALE_NAMES_DECLENSION[name]
 
-    # Для англійських імен або інших - не відмінюємо
+    # Для англійських імен або юзернеймів
     if name.isascii():
         return name
 
@@ -46,20 +56,20 @@ def format_duration(start_date: str) -> str:
 
     if total_seconds < 60:
         return f"{total_seconds} секунд"
-    elif total_seconds < 3600:  # менше години
+    elif total_seconds < 3600:
         return f"{minutes} хвилин {seconds} секунд"
-    elif days == 0:  # менше дня
+    elif days == 0:
         return f"{hours} годин {minutes} хвилин"
-    elif days < 30:  # менше місяця
+    elif days < 30:
         return f"{days} днів {hours} годин {minutes} хвилин"
-    elif days < 365:  # менше року
+    elif days < 365:
         months = days // 30
         remaining_days = days % 30
         if months == 1:
             return f"1 місяць {remaining_days} днів {hours} годин"
         else:
             return f"{months} місяців {remaining_days} днів {hours} годин"
-    else:  # більше року
+    else:
         years = days // 365
         remaining_days = days % 365
         months = remaining_days // 30
@@ -77,24 +87,25 @@ def format_duration(start_date: str) -> str:
                 return f"{years} років {final_days} днів"
 
 def create_user_link(name: str, user_id=None, is_sender=False, is_action=False, is_relationship_display=False) -> str:
-    """Створює посилання на користувача"""
+    """Створює безпечне посилання на користувача з екрануванням спецсимволів"""
+    safe_name = escape_markdown(name)
     if is_sender:
-        return name
+        return safe_name
     elif is_action:
         if user_id:
-            return f"[✦**{name}**](tg://user?id={user_id})"
+            return f"[✦**{safe_name}**](tg://user?id={user_id})"
         else:
-            return f"✦**{name}**"
+            return f"✦**{safe_name}**"
     elif is_relationship_display:
         if user_id:
-            return f"[✦💖**{name}**💖](tg://user?id={user_id})"
+            return f"[✦💖**{safe_name}**💖](tg://user?id={user_id})"
         else:
-            return f"✦💖**{name}**💖"
+            return f"✦💖**{safe_name}**💖"
     else:
         if user_id:
-            return f"[**{name}**](tg://user?id={user_id})"
+            return f"[**{safe_name}**](tg://user?id={user_id})"
         else:
-            return f"**{name}**"
+            return f"**{safe_name}**"
 
 def find_user_relationships(user_name: str, relationships: dict) -> list:
     """Знаходить всі стосунки користувача"""

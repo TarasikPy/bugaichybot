@@ -9,6 +9,22 @@ from handlers.relationships import handle_couple_command
 
 logger = logging.getLogger(__name__)
 
+async def _send_safe_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) -> None:
+    """Безпечно відправляє повідомлення у чат, з fallback на звичайний текст у разі помилок парсингу Markdown"""
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.warning(f"Не вдалося відправити з Markdown ({e}), відправляємо чистий текст")
+        plain_text = text.replace('*', '').replace('_', '').replace('`', '').replace('[', '').replace(']', '')
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=plain_text
+        )
+
 async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обробляє звичайні команди дій з підтримкою префіксів / та !, відмінюванням отримувача та збереженням додаткового тексту"""
     message_text = update.message.text.strip()
@@ -32,11 +48,7 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
                 user_link = create_user_link(sender_name, is_sender=True)
                 response = f"✨ {user_link} {action_text}"
 
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=response,
-                    parse_mode='Markdown'
-                )
+                await _send_safe_message(context, update.effective_chat.id, response)
                 return
 
     # 2. Дії зі згадкою користувача (@username)
@@ -57,11 +69,7 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
 
     # Перевірка на бота
     if bot_username and raw_target.lower() == bot_username.lower():
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="🤖 На мені не можна виконувати дії!",
-            parse_mode='Markdown'
-        )
+        await _send_safe_message(context, update.effective_chat.id, "🤖 На мені не можна виконувати дії!")
         return
 
     # Визначення імені отримувача
@@ -100,11 +108,7 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             response += f" {rest_text}"
 
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=response,
-        parse_mode='Markdown'
-    )
+    await _send_safe_message(context, update.effective_chat.id, response)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Головний обробник текстових повідомлень з підтримкою префіксів / та !"""
