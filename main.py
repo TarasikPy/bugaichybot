@@ -16,14 +16,6 @@ from handlers.relationships import (
     dating_command,
     trio_command
 )
-from handlers.wisdom import (
-    my_wisdom_command,
-    wisdom_top_command,
-    set_messages_command,
-    add_messages_command,
-    sync_user_command,
-    test_wisdom_command
-)
 from handlers.analytics import chat_stats_command
 from handlers.actions import handle_message
 
@@ -49,11 +41,6 @@ async def setup_bot_commands(application: Application) -> None:
         BotCommand("commands", "📋 Всі команди"),
         BotCommand("dating", "💫 Розпочати стосунки (відповідь на повідомлення)"),
         BotCommand("trio", "👥 Створити стосунки на 3 особи"),
-        BotCommand("mywisdom", "🧠 Показати вашу мудрість"),
-        BotCommand("wisdomtop", "🏆 Топ мудрих користувачів"),
-        BotCommand("setmessages", "🔧 Встановити кількість повідомлень (відповідь+кількість)"),
-        BotCommand("addmessages", "➕ Додати повідомлення (відповідь+кількість)"),
-        BotCommand("syncuser", "🔄 Синхронізувати користувача (відповідь на повідомлення)"),
         BotCommand("chatstats", "📊 Аналітика активності чату")
     ]
 
@@ -85,22 +72,16 @@ def main() -> None:
         application.add_handler(CommandHandler("dating", dating_command))
         application.add_handler(CommandHandler("trio", trio_command))
         application.add_handler(CommandHandler("commands", commands_command))
-        application.add_handler(CommandHandler("mywisdom", my_wisdom_command))
-        application.add_handler(CommandHandler("wisdomtop", wisdom_top_command))
-        application.add_handler(CommandHandler("setmessages", set_messages_command))
-        application.add_handler(CommandHandler("addmessages", add_messages_command))
-        application.add_handler(CommandHandler("syncuser", sync_user_command))
-        application.add_handler(CommandHandler("testwisdom", test_wisdom_command))
         application.add_handler(CommandHandler("chatstats", chat_stats_command))
 
         # Обробник кнопок
         application.add_handler(CallbackQueryHandler(button_callback))
 
-        # Обробники повідомлень
+        # Обробники повідомлень (включаючи підтримку префікса ! та /)
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_handler(MessageHandler(filters.COMMAND, handle_message))
 
-        print("🚀 Бот успішно запущений з чистою модульною архітектурою...")
+        print("🚀 Бот успішно запущений з чистим RP-функціоналом...")
 
         application.run_polling(
             allowed_updates=Update.ALL_TYPES,

@@ -121,6 +121,5 @@ ALL_COUPLE_COMMANDS = {**COUPLE_COMMANDS, **MARRIED_COMMANDS, **TRIO_COMMANDS}
 # Валідні команди
 VALID_COMMANDS = [
     'start', 'help', 'relationships', 'myrelationships', 'flipcoin', 'proposals', 'commands', 'trio',
-    'wisdom', 'mywisdom', 'wisdomtop',
     *ALL_COUPLE_COMMANDS.keys()
 ]
