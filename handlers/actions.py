@@ -7,12 +7,12 @@ from config.names import USERS_MAP
 from config.levels import ALL_COUPLE_COMMANDS, VALID_COMMANDS
 from utils.helpers import decline_name, create_html_user_link, escape_html
 from handlers.relationships import handle_couple_command
-from storage.user_cache import update_user_cache, get_first_name_by_username
+from storage.user_cache import update_user_cache, get_user_info_by_username
 
 logger = logging.getLogger(__name__)
 
 async def _send_html_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) -> None:
-    """Відправляє повідомлення у чат у форматі HTML"""
+    """Відправляє повідомлення у чат у форматі HTML з fallback на чистий текст"""
     try:
         await context.bot.send_message(
             chat_id=chat_id,
@@ -28,7 +28,7 @@ async def _send_html_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, t
         )
 
 async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє звичайні команди дій з підтримкою префіксів / та !, USERS_MAP та клікабельних HTML посилань tg://user?id= для відправника й отримувача"""
+    """Обробляє звичайні команди дій з підтримкою REPLY (відповіді на повідомлення), @username згадок, USERS_MAP та клікабельних HTML посилань tg://user?id="""
     message_text = update.message.text.strip()
     from_user = update.message.from_user
     bot_username = context.bot.username
@@ -36,13 +36,13 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
     sender_id = from_user.id if from_user else None
     sender_username = from_user.username.lower() if from_user and from_user.username else ""
 
-    # Ім'я відправника з USERS_MAP або first_name (із збереженням усіх емодзі)
+    # Ім'я відправника з USERS_MAP або first_name
     if sender_username and sender_username in USERS_MAP:
         sender_name = USERS_MAP[sender_username]
     else:
         sender_name = from_user.first_name or from_user.username or "Користувач"
 
-    # Оновлюємо динамічний кеш юзерів
+    # Завжди оновлюємо динамічний кеш юзерів
     if from_user and from_user.username:
         await update_user_cache(from_user.username, sender_name, sender_id)
 
@@ -52,9 +52,66 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         logger.warning(f"Не вдалося видалити повідомлення: {e}")
 
-    # 1. Дії без згадки користувача (без @)
-    # Приклад: /дав жінкам права або !дав жінкам права
-    if '@' not in message_text:
+    if not (message_text.startswith('/') or message_text.startswith('!')):
+        return
+
+    target_user_id = None
+    target_display_name = None
+    action = ""
+    rest_text = ""
+
+    # ВАРІАНТ А: Дія через REPLY (Відповідь на повідомлення користувача)
+    if update.message.reply_to_message and update.message.reply_to_message.from_user:
+        reply_user = update.message.reply_to_message.from_user
+        target_user_id = reply_user.id
+
+        if reply_user.username and reply_user.username.lower() in USERS_MAP:
+            target_display_name = USERS_MAP[reply_user.username.lower()]
+        else:
+            target_display_name = reply_user.first_name or reply_user.username or "Користувач"
+
+        # Парсимо дію та додатковий текст (наприклад "!вдарив лопатою по голові")
+        match_reply = re.match(r'^[/\!](\S+)\s*(.*)$', message_text, re.DOTALL)
+        if match_reply:
+            action = match_reply.group(1).strip()
+            rest_text = match_reply.group(2).strip()
+
+    # ВАРІАНТ Б: Дія через ЗГАДКУ (@username або entities)
+    elif '@' in message_text:
+        pattern = r'^[/\!]([^@]+?)\s*@([^\s]+)(.*)$'
+        match_mention = re.match(pattern, message_text, re.DOTALL)
+
+        if match_mention:
+            action = match_mention.group(1).strip()
+            raw_target = match_mention.group(2).strip().lstrip('@')
+            rest_text = match_mention.group(3).strip() if match_mention.group(3) else ""
+
+            # а) Перевірка text_mention в entities
+            if update.message.entities:
+                for entity in update.message.entities:
+                    if entity.type == 'text_mention' and entity.user:
+                        target_user_id = entity.user.id
+                        target_display_name = entity.user.first_name or entity.user.username
+                        break
+
+            # б) Пошук у статичному USERS_MAP
+            if not target_display_name and raw_target.lower() in USERS_MAP:
+                target_display_name = USERS_MAP[raw_target.lower()]
+
+            # в) Пошук у динамічному кеші юзерів
+            if not target_user_id or not target_display_name:
+                cached_name, cached_id = await get_user_info_by_username(raw_target)
+                if cached_name and not target_display_name:
+                    target_display_name = cached_name
+                if cached_id and not target_user_id:
+                    target_user_id = cached_id
+
+            # г) Fallback
+            if not target_display_name:
+                target_display_name = raw_target
+
+    # ВАРІАНТ В: Дії без отримувача (наприклад /дав жінкам права або !дав жінкам права)
+    else:
         action_match = re.match(r'^[/\!](.+)$', message_text)
         if action_match:
             action_text = action_match.group(1).strip()
@@ -66,76 +123,27 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
                 await _send_html_message(context, update.effective_chat.id, response)
                 return
 
-    # 2. Дії зі згадкою користувача (@username)
-    # Парсинг: [Префікс][ACTION] @[TARGET] [REST_OF_TEXT]
-    # Приклад: /вдарив @sp_mangment по голові або !вдарив @username
-    pattern = r'^[/\!]([^@]+?)\s*@([^\s]+)(.*)$'
-    match = re.match(pattern, message_text, re.DOTALL)
-
-    if not match:
+    if not action or action in ALL_COUPLE_COMMANDS:
         return
 
-    action = match.group(1).strip()
-    raw_target = match.group(2).strip().lstrip('@')
-    rest_text = match.group(3).strip() if match.group(3) else ""
-
-    if action in ALL_COUPLE_COMMANDS:
-        return
-
-    # Перевірка на бота
-    if bot_username and raw_target.lower() == bot_username.lower():
+    # Захист від виконання дії на боті
+    if bot_username and target_display_name and target_display_name.lower() == bot_username.lower():
         await _send_html_message(context, update.effective_chat.id, "🤖 На мені не можна виконувати дії!")
         return
 
-    # Пошук імені та ID отримувача
-    target_user_id = None
-    target_display_name = None
+    # Обов'язково відміняємо ім'я отримувача ("Арма" -> "Арму", "Сергій" -> "Сергія")
+    target_declined = decline_name(target_display_name) if target_display_name else ""
 
-    # а) Перевірка text_mention в entities
-    if update.message.entities:
-        for entity in update.message.entities:
-            if entity.type == 'text_mention' and entity.user:
-                target_user_id = entity.user.id
-                target_display_name = entity.user.first_name or entity.user.username
-                break
-
-    # б) Перевірка reply_to_message
-    if not target_user_id and update.message.reply_to_message and update.message.reply_to_message.from_user:
-        reply_user = update.message.reply_to_message.from_user
-        if reply_user.username and reply_user.username.lower() == raw_target.lower():
-            target_user_id = reply_user.id
-            target_display_name = reply_user.first_name or reply_user.username
-        elif not reply_user.username:
-            target_user_id = reply_user.id
-            target_display_name = reply_user.first_name
-
-    # в) Перевірка у статичному USERS_MAP
-    if raw_target.lower() in USERS_MAP:
-        mapped_name = USERS_MAP[raw_target.lower()]
-        if not target_display_name:
-            target_display_name = mapped_name
-
-    # г) Пошук у динамічному кеші юзерів
-    if not target_user_id or not target_display_name:
-        cached_name, cached_id = await get_first_name_by_username(raw_target)
-        if cached_name and not target_display_name:
-            target_display_name = cached_name
-        if cached_id and not target_user_id:
-            target_user_id = cached_id
-
-    # д) Fallback на чистий юзернейм
-    if not target_display_name:
-        target_display_name = raw_target
-
-    # Обов'язково відміняємо ім'я отримувача ("Арма" -> "Арму")
-    target_declined = decline_name(target_display_name)
-
-    # Генеруємо КЛІКАБЕЛЬНІ HTML-посилання для ВІДПРАВНИКА та ОТРИМУВАЧА
+    # Генеруємо HTML-посилання для ВІДПРАВНИКА та ОТРИМУВАЧА
     sender_link = create_html_user_link(sender_name, user_id=sender_id)
-    target_link = create_html_user_link(target_declined, user_id=target_user_id)
 
-    # Підсумковий формат:
-    # ✨ <a href="tg://user?id=111111">🧠K I Y O T A K A 🫀</a> вдарив <a href="tg://user?id=222222">Арму</a> по голові
+    if target_user_id:
+        target_link = f'<a href="tg://user?id={target_user_id}">{escape_html(target_declined)}</a>'
+    else:
+        target_link = f'<b>{escape_html(target_declined)}</b>'
+
+    # Формування підсумкового речення:
+    # ✨ <a href="tg://user?id=111">KIYOTAKA</a> вдарив <a href="tg://user?id=222">Арму</a> лопатою по голові
     response = f"✨ {sender_link} {escape_html(action)} {target_link}"
 
     if rest_text:
