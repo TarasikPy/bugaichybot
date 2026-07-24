@@ -20,7 +20,7 @@ async def _send_html_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, t
             parse_mode='HTML'
         )
     except Exception as e:
-        logger.warning(f"Не вдалося відправити HTML повідомлення ({e}), відправляємо звичайний текст")
+        logger.warning(f"Не вдалося відправити HTML повідомлення ({e}), відправляємо чистий текст")
         plain_text = re.sub(r'<[^>]*>', '', text)
         await context.bot.send_message(
             chat_id=chat_id,
@@ -28,21 +28,23 @@ async def _send_html_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, t
         )
 
 async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє звичайні команди дій з підтримкою префіксів / та !, USERS_MAP, first_name за @username та жирного шрифту HTML"""
+    """Обробляє звичайні команди дій з підтримкою префіксів / та !, USERS_MAP та клікабельних HTML посилань tg://user?id= для відправника й отримувача"""
     message_text = update.message.text.strip()
     from_user = update.message.from_user
     bot_username = context.bot.username
 
-    # Відправник: ім'я зі словника USERS_MAP або first_name
+    sender_id = from_user.id if from_user else None
     sender_username = from_user.username.lower() if from_user and from_user.username else ""
+
+    # Ім'я відправника з USERS_MAP або first_name (із збереженням усіх емодзі)
     if sender_username and sender_username in USERS_MAP:
         sender_name = USERS_MAP[sender_username]
     else:
         sender_name = from_user.first_name or from_user.username or "Користувач"
 
-    # Оновлюємо кеш юзерів
+    # Оновлюємо динамічний кеш юзерів
     if from_user and from_user.username:
-        await update_user_cache(from_user.username, sender_name, from_user.id)
+        await update_user_cache(from_user.username, sender_name, sender_id)
 
     # МИТТЄВО намагаємося видалити вихідне повідомлення користувача
     try:
@@ -58,8 +60,8 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
             action_text = action_match.group(1).strip()
             first_word = action_text.split()[0] if action_text.split() else action_text
             if first_word not in ALL_COUPLE_COMMANDS and first_word not in VALID_COMMANDS:
-                user_link = create_html_user_link(sender_name, is_sender=True)
-                response = f"✨ {user_link} {escape_html(action_text)}"
+                sender_link = create_html_user_link(sender_name, user_id=sender_id)
+                response = f"✨ {sender_link} {escape_html(action_text)}"
 
                 await _send_html_message(context, update.effective_chat.id, response)
                 return
@@ -85,37 +87,40 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
         await _send_html_message(context, update.effective_chat.id, "🤖 На мені не можна виконувати дії!")
         return
 
-    # Логіка визначення імені Отримувача (Target)
+    # Пошук імені та ID отримувача
     target_user_id = None
     target_display_name = None
 
-    # а) Спочатку шукаємо юзернейм у статичному USERS_MAP
-    if raw_target.lower() in USERS_MAP:
-        target_display_name = USERS_MAP[raw_target.lower()]
-
-    # б) Перевірка text_mention в entities
-    if not target_display_name and update.message.entities:
+    # а) Перевірка text_mention в entities
+    if update.message.entities:
         for entity in update.message.entities:
             if entity.type == 'text_mention' and entity.user:
-                target_display_name = entity.user.first_name or entity.user.username
                 target_user_id = entity.user.id
+                target_display_name = entity.user.first_name or entity.user.username
                 break
 
-    # в) Перевірка reply_to_message
-    if not target_display_name and update.message.reply_to_message and update.message.reply_to_message.from_user:
+    # б) Перевірка reply_to_message
+    if not target_user_id and update.message.reply_to_message and update.message.reply_to_message.from_user:
         reply_user = update.message.reply_to_message.from_user
         if reply_user.username and reply_user.username.lower() == raw_target.lower():
+            target_user_id = reply_user.id
             target_display_name = reply_user.first_name or reply_user.username
-            target_user_id = reply_user.id
         elif not reply_user.username:
-            target_display_name = reply_user.first_name
             target_user_id = reply_user.id
+            target_display_name = reply_user.first_name
+
+    # в) Перевірка у статичному USERS_MAP
+    if raw_target.lower() in USERS_MAP:
+        mapped_name = USERS_MAP[raw_target.lower()]
+        if not target_display_name:
+            target_display_name = mapped_name
 
     # г) Пошук у динамічному кеші юзерів
-    if not target_display_name:
+    if not target_user_id or not target_display_name:
         cached_name, cached_id = await get_first_name_by_username(raw_target)
-        if cached_name:
+        if cached_name and not target_display_name:
             target_display_name = cached_name
+        if cached_id and not target_user_id:
             target_user_id = cached_id
 
     # д) Fallback на чистий юзернейм
@@ -125,12 +130,13 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
     # Обов'язково відміняємо ім'я отримувача ("Арма" -> "Арму")
     target_declined = decline_name(target_display_name)
 
-    user_link = create_html_user_link(sender_name, is_sender=True)
-    target_link = create_html_user_link(target_declined, target_user_id, is_sender=False, is_action=True)
+    # Генеруємо КЛІКАБЕЛЬНІ HTML-посилання для ВІДПРАВНИКА та ОТРИМУВАЧА
+    sender_link = create_html_user_link(sender_name, user_id=sender_id)
+    target_link = create_html_user_link(target_declined, user_id=target_user_id)
 
-    # Формування підсумкового речення в HTML:
-    # ✨ <b>[Відправник]</b> [дія] <b>[Отримувач]</b> [додатковий текст]
-    response = f"✨ {user_link} {escape_html(action)} {target_link}"
+    # Підсумковий формат:
+    # ✨ <a href="tg://user?id=111111">🧠K I Y O T A K A 🫀</a> вдарив <a href="tg://user?id=222222">Арму</a> по голові
+    response = f"✨ {sender_link} {escape_html(action)} {target_link}"
 
     if rest_text:
         response += f" {escape_html(rest_text)}"

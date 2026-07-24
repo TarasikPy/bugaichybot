@@ -93,21 +93,13 @@ def format_duration(start_date: str) -> str:
             else:
                 return f"{years} років {final_days} днів"
 
-def create_html_user_link(name: str, user_id=None, is_sender=False, is_action=False) -> str:
-    """Створює HTML-посилання на користувача з жирним шрифтом"""
+def create_html_user_link(name: str, user_id=None) -> str:
+    """Створює клікабельне HTML-посилання на профіль користувача (tg://user?id=)"""
     safe_name = escape_html(name)
-    if is_sender:
-        return f"<b>{safe_name}</b>"
-    elif is_action:
-        if user_id:
-            return f'<a href="tg://user?id={user_id}"><b>{safe_name}</b></a>'
-        else:
-            return f"<b>{safe_name}</b>"
+    if user_id:
+        return f'<a href="tg://user?id={user_id}">{safe_name}</a>'
     else:
-        if user_id:
-            return f'<a href="tg://user?id={user_id}"><b>{safe_name}</b></a>'
-        else:
-            return f"<b>{safe_name}</b>"
+        return f'<b>{safe_name}</b>'
 
 def create_user_link(name: str, user_id=None, is_sender=False, is_action=False, is_relationship_display=False) -> str:
     """Створює безпечне посилання на користувача з екрануванням спецсимволів (Markdown)"""
