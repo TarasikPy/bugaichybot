@@ -37,6 +37,27 @@ EMOJI_REGEX = re.compile(
     r'\U0001F900-\U0001F9FF\U0001FA70-\U0001FAFF]'
 )
 
+def is_real_user(user_id: int, user_name: str) -> bool:
+    """Перевіряє, чи є акаунт реальним користувачем (не бот, не безназваний ID, не видалений акаунт)"""
+    if not user_id or user_id <= 0:
+        return False
+
+    name_lower = (user_name or "").strip().lower()
+
+    # 1. Ігнорування ботів (слово "bot" в імені або "мафія")
+    if 'bot' in name_lower or 'мафія' in name_lower or 'mafia' in name_lower:
+        return False
+
+    # 2. Ігнорування безназваних / видалених акаунтів
+    if not user_name or name_lower in ('deleted account', 'видалений акаунт', 'user', 'користувач'):
+        return False
+
+    # Ігнорування імен формату User_1234567890
+    if re.match(r'^user_\d+$', name_lower):
+        return False
+
+    return True
+
 def extract_text(text_field) -> str:
     """Витягує чистий текст з поля text Telegram-експорту"""
     if isinstance(text_field, str):
@@ -138,7 +159,6 @@ def main():
 
     # 1. Фільтрація системних повідомлень та ініціалізація структур даних
     user_names = {}        # user_id -> latest name
-    user_usernames = {}    # user_id -> latest username
     user_msg_count = Counter()
     user_char_count = Counter()
     user_samples = defaultdict(list)
@@ -190,8 +210,8 @@ def main():
         if text_len >= 10 and len(user_samples[user_id]) < 150:
             user_samples[user_id].append(text)
 
-        # Лонгріди (найдовші повідомлення)
-        if text_len > 300:
+        # Лонгріди (найдовші повідомлення від реальних користувачів)
+        if text_len > 300 and is_real_user(user_id, name):
             longreads.append({
                 'user_id': user_id,
                 'name': name,
@@ -224,10 +244,17 @@ def main():
     avg_msg_len = round(total_chars / total_messages, 1) if total_messages > 0 else 0
     top_longreads = sorted(longreads, key=lambda x: x['len'], reverse=True)[:5]
 
-    # 2. Формування ТОП-20 користувачів за всі часи
-    top_users_ids = [uid for uid, _ in user_msg_count.most_common(20)]
+    # 2. Формування ТОП-20 РЕАЛЬНИХ користувачів (без ботів та видалених акаунтів)
+    real_top_users_ids = []
+    for uid, _ in user_msg_count.most_common():
+        uname = user_names.get(uid, "")
+        if is_real_user(uid, uname):
+            real_top_users_ids.append(uid)
+            if len(real_top_users_ids) == 20:
+                break
+
     top_users_data = []
-    for uid in top_users_ids:
+    for uid in real_top_users_ids:
         msgs = user_msg_count[uid]
         chars = user_char_count[uid]
         avg_c = round(chars / msgs, 1) if msgs > 0 else 0
@@ -239,24 +266,29 @@ def main():
             'avg_chars': avg_c
         })
 
-    # 3. Формування ТОП дуетів
+    # 3. Формування ТОП дуетів виключно між реальними людьми
     top_duets = []
-    for (u1, u2), count in reply_pairs.most_common(10):
-        top_duets.append({
-            'user1_id': u1,
-            'user1_name': user_names.get(u1, f"User_{u1}"),
-            'user2_id': u2,
-            'user2_name': user_names.get(u2, f"User_{u2}"),
-            'replies_count': count
-        })
+    for (u1, u2), count in reply_pairs.most_common():
+        name1 = user_names.get(u1, "")
+        name2 = user_names.get(u2, "")
+        if is_real_user(u1, name1) and is_real_user(u2, name2):
+            top_duets.append({
+                'user1_id': u1,
+                'user1_name': name1,
+                'user2_id': u2,
+                'user2_name': name2,
+                'replies_count': count
+            })
+            if len(top_duets) == 10:
+                break
 
-    # 4. AI Психоаналіз ТОП-15/20 користувачів через Gemini API
-    print("🧠 Генерируємо AI психологічні профілі користувачів...")
+    # 4. AI Психоаналіз ТОП-20 РЕАЛЬНИХ користувачів через Gemini API
+    print(f"🧠 Генерируємо AI психологічні профілі для {len(real_top_users_ids)} реальних користувачів...")
     ai_profiles = {}
-    for idx, uid in enumerate(top_users_ids[:20], 1):
+    for idx, uid in enumerate(real_top_users_ids, 1):
         uname = user_names.get(uid, f"User_{uid}")
         samples = user_samples[uid]
-        print(f"  [{idx}/20] Аналіз портрета для: {uname} ({len(samples)} повідомлень)...")
+        print(f"  [{idx}/{len(real_top_users_ids)}] Аналіз портрета для: {uname} ({len(samples)} повідомлень)...")
         profile = generate_gemini_profile(uname, samples, GEMINI_API_KEY)
         profile['user_id'] = uid
         profile['name'] = uname
