@@ -6,11 +6,12 @@ from telegram.ext import ContextTypes
 from config.levels import ALL_COUPLE_COMMANDS, VALID_COMMANDS
 from utils.helpers import decline_name, create_user_link
 from handlers.relationships import handle_couple_command
+from storage.user_cache import update_user_cache, get_first_name_by_username
 
 logger = logging.getLogger(__name__)
 
 async def _send_safe_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) -> None:
-    """Безпечно відправляє повідомлення у чат, з fallback на звичайний текст у разі помилок парсингу Markdown"""
+    """Безпечно відправляє повідомлення у чат з fallback на чистий текст при помилках розмітки"""
     try:
         await context.bot.send_message(
             chat_id=chat_id,
@@ -26,10 +27,15 @@ async def _send_safe_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, t
         )
 
 async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє звичайні команди дій з підтримкою префіксів / та !, відмінюванням отримувача та збереженням додаткового тексту"""
+    """Обробляє звичайні команди дій з підтримкою префіксів / та !, визначенням справжнього first_name за @username та відмінюванням"""
     message_text = update.message.text.strip()
-    sender_name = update.message.from_user.first_name or update.message.from_user.username or "Користувач"
+    from_user = update.message.from_user
+    sender_name = from_user.first_name or from_user.username or "Користувач"
     bot_username = context.bot.username
+
+    # Зберігаємо відправника в кеш юзерів
+    if from_user and from_user.username:
+        await update_user_cache(from_user.username, sender_name, from_user.id)
 
     # МИТТЄВО намагаємося видалити вихідне повідомлення користувача
     try:
@@ -72,28 +78,45 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
         await _send_safe_message(context, update.effective_chat.id, "🤖 На мені не можна виконувати дії!")
         return
 
-    # Визначення імені отримувача
+    # Логіка отримання справжнього імені (Target First Name)
     target_user_id = None
     target_display_name = raw_target
 
-    # Якщо це відповідь (reply) на повідомлення, пробуємо взяти first_name отримувача
-    if update.message.reply_to_message and update.message.reply_to_message.from_user:
+    # а) Перевірка text_mention в entities
+    if update.message.entities:
+        for entity in update.message.entities:
+            if entity.type == 'text_mention' and entity.user:
+                target_display_name = entity.user.first_name or entity.user.username or raw_target
+                target_user_id = entity.user.id
+                if entity.user.username:
+                    await update_user_cache(entity.user.username, target_display_name, target_user_id)
+                break
+
+    # б) Якщо ім'я ще не визначено, перевіряємо reply_to_message
+    if target_display_name == raw_target and update.message.reply_to_message and update.message.reply_to_message.from_user:
         reply_user = update.message.reply_to_message.from_user
         if reply_user.username and reply_user.username.lower() == raw_target.lower():
-            target_user_id = reply_user.id
             target_display_name = reply_user.first_name or reply_user.username
-        elif not reply_user.username:
             target_user_id = reply_user.id
-            target_display_name = reply_user.first_name or raw_target
+            await update_user_cache(reply_user.username, target_display_name, target_user_id)
+        elif not reply_user.username and reply_user.first_name:
+            target_display_name = reply_user.first_name
+            target_user_id = reply_user.id
 
-    # Обов'язково відміняємо ім'я/юзернейм отримувача
+    # в) Якщо ім'я все ще юзернейм, шукаємо в локальному кеші юзерів
+    if target_display_name == raw_target:
+        cached_name, cached_id = await get_first_name_by_username(raw_target)
+        if cached_name:
+            target_display_name = cached_name
+            target_user_id = cached_id
+
+    # г) Обов'язково пропускаємо ім'я через decline_name() для відмінювання ("Арма" -> "Арму")
     target_declined = decline_name(target_display_name)
 
     user_link = create_user_link(sender_name, is_sender=True)
     target_link = create_user_link(target_declined, target_user_id, is_sender=False, is_action=True)
 
-    # Формування підсумкового речення:
-    # [Ім'я Відправника] [дія] [Відміняне Ім'я Отримувача] [додатковий текст]
+    # Формування результату: [Ім'я Відправника] [дія] [Відміняне Ім'я Отримувача] [додатковий текст]
     response = f"✨ {user_link} {action} {target_link}"
 
     if rest_text:
@@ -111,8 +134,18 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
     await _send_safe_message(context, update.effective_chat.id, response)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Головний обробник текстових повідомлень з підтримкою префіксів / та !"""
-    if not update.message or not update.message.text:
+    """Головний обробник текстових повідомлень з підтримкою кешування юзерів та префіксів / та !"""
+    if not update.message:
+        return
+
+    # Завжди оновлюємо кеш юзернейма та first_name при будь-якому повідомленні
+    if update.message.from_user:
+        user = update.message.from_user
+        first_name = user.first_name or user.username or "Користувач"
+        if user.username:
+            await update_user_cache(user.username, first_name, user.id)
+
+    if not update.message.text:
         return
 
     message_text = update.message.text.strip()
