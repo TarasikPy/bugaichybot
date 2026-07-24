@@ -10,7 +10,7 @@ from handlers.relationships import handle_couple_command
 logger = logging.getLogger(__name__)
 
 async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє звичайні команди дій з підтримкою будь-яких імен, префіксів / та !"""
+    """Обробляє звичайні команди дій з підтримкою префіксів / та !, відмінюванням отримувача та збереженням додаткового тексту"""
     message_text = update.message.text.strip()
     sender_name = update.message.from_user.first_name or update.message.from_user.username or "Користувач"
     bot_username = context.bot.username
@@ -21,7 +21,7 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         logger.warning(f"Не вдалося видалити повідомлення: {e}")
 
-    # Перевіряємо дію без згадки користувача (без @)
+    # 1. Дії без згадки користувача (без @)
     # Приклад: /дав жінкам права або !дав жінкам права
     if '@' not in message_text:
         action_match = re.match(r'^[/\!](.+)$', message_text)
@@ -39,24 +39,24 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
                 )
                 return
 
-    # Розбираємо команду з підтримкою префіксів / та ! і будь-яких імен після @
-    # Приклад: /вдарив @User або !вдарив @User дуже сильно. зі словами
+    # 2. Дії зі згадкою користувача (@username)
+    # Парсинг: [Префікс][ACTION] @[TARGET] [REST_OF_TEXT]
+    # Приклад: /вдарив @sp_mangment по голові або !вдарив @username
     pattern = r'^[/\!]([^@]+?)\s*@([^\s]+)(.*)$'
-    match = re.match(pattern, message_text)
+    match = re.match(pattern, message_text, re.DOTALL)
 
     if not match:
         return
 
     action = match.group(1).strip()
-    target_username = match.group(2).strip()
+    raw_target = match.group(2).strip()
     rest_text = match.group(3).strip() if match.group(3) else ""
 
-    # Перевіряємо чи це не команда для пар
     if action in ALL_COUPLE_COMMANDS:
         return
 
-    # Захист від виконання дії на боті
-    if bot_username and target_username.lower() == bot_username.lower():
+    # Перевірка на бота
+    if bot_username and raw_target.lower() == bot_username.lower():
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text="🤖 На мені не можна виконувати дії!",
@@ -64,43 +64,41 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    # Отримуємо ім'я отримувача: з відповіді (reply) або зі згадки
+    # Визначення імені отримувача
     target_user_id = None
-    target_display_name = target_username
+    target_display_name = raw_target
 
+    # Якщо це відповідь (reply) на повідомлення, пробуємо взяти first_name отримувача
     if update.message.reply_to_message and update.message.reply_to_message.from_user:
         reply_user = update.message.reply_to_message.from_user
-        if reply_user.username and reply_user.username.lower() == target_username.lower():
+        if reply_user.username and reply_user.username.lower() == raw_target.lower():
             target_user_id = reply_user.id
             target_display_name = reply_user.first_name or reply_user.username
-        elif not reply_user.username and reply_user.first_name:
+        elif not reply_user.username:
             target_user_id = reply_user.id
-            target_display_name = reply_user.first_name
+            target_display_name = reply_user.first_name or raw_target
 
-    # Обов'язково пропускаємо ім'я через функцію відмінювання decline_name()
-    user_link = create_user_link(sender_name, is_sender=True)
+    # Обов'язково відміняємо ім'я/юзернейм отримувача
     target_declined = decline_name(target_display_name)
+
+    user_link = create_user_link(sender_name, is_sender=True)
     target_link = create_user_link(target_declined, target_user_id, is_sender=False, is_action=True)
 
-    additional_actions = ""
-    words = ""
+    # Формування підсумкового речення:
+    # [Ім'я Відправника] [дія] [Відміняне Ім'я Отримувача] [додатковий текст]
+    response = f"✨ {user_link} {action} {target_link}"
 
     if rest_text:
         if '.' in rest_text:
             parts = rest_text.split('.', 1)
-            additional_actions = parts[0].strip()
+            additional = parts[0].strip()
             words = parts[1].strip()
+            if additional:
+                response += f" {additional}"
+            if words:
+                response += f" зі словами 💬**\"{words}\"**✨"
         else:
-            additional_actions = rest_text
-
-    # Формуємо результат відповіді
-    response = f"✨ {user_link} {action} {target_link}"
-
-    if additional_actions:
-        response += f" {additional_actions}"
-
-    if words:
-        response += f" зі словами 💬**\"{words}\"**✨"
+            response += f" {rest_text}"
 
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
@@ -115,7 +113,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     message_text = update.message.text.strip()
 
-    # Обробляємо команди з префіксом / або !
     if message_text.startswith('/') or message_text.startswith('!'):
         command_match = re.match(r'^[/\!](\w+)', message_text)
         if command_match:
