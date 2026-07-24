@@ -60,15 +60,15 @@ async def relationships_command(update: Update, context: ContextTypes.DEFAULT_TY
         total_points = data.get('total_points', 0)
         level = get_relationship_level(total_points)
         level_info = RELATIONSHIP_LEVELS[level]
+        rank_name = level_info['name']
+        rank_emoji = level_info['emoji']
         status = data.get('status', 'dating')
 
         status_emoji = "💒" if status == 'married' else "💕"
         link1 = create_user_link(user1_id, user1_name)
         link2 = create_user_link(user2_id, user2_name)
 
-        text += f"{status_emoji} {link1} ❤️ {link2}\n"
-        text += f"📊 <b>Рівень:</b> {level_info['emoji']} {level_info['name']}\n"
-        text += f"⚡ <b>Очки:</b> {total_points}\n"
+        text += f"{status_emoji} {link1} ❤️ {link2} — {total_points} оч. [{rank_emoji} {rank_name}]\n"
         text += f"📅 <b>Тривалість:</b> {duration}\n\n"
 
     await _send_html_message(context, chat_id, text)
@@ -251,7 +251,7 @@ async def handle_couple_command(update: Update, context: ContextTypes.DEFAULT_TY
         await _send_html_message(context, chat_id, proposal_text, reply_markup=keyboard)
         return
 
-    # 2. ОБРОБКА ДІЙ У ПАРАХ (+ОЧКИ)
+    # 2. ОБРОБКА ДІЙ У ПАРАХ (+ОЧКИ) (/kiss, /hug, /love, /date, /gift...)
     active_couple_id = None
     couple_info = None
 
@@ -262,7 +262,7 @@ async def handle_couple_command(update: Update, context: ContextTypes.DEFAULT_TY
             break
 
     if not couple_info:
-        await _send_html_message(context, chat_id, "💔 Цю команду можна виконувати тільки перебуваючи у стосунках! Використайте <code>/dating</code>")
+        await _send_html_message(context, chat_id, "❌ Ви не перебуваєте в стосунках! Використайте /dating, щоб запропонувати комусь зустрічатися.")
         return
 
     cmd_info = ALL_COUPLE_COMMANDS.get(command, {'action': 'провели час разом', 'points': 3, 'emoji': '💕'})

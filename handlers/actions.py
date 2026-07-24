@@ -1,5 +1,6 @@
 import re
 import logging
+from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -7,6 +8,7 @@ from config.names import USERS_MAP
 from config.levels import ALL_COUPLE_COMMANDS, VALID_COMMANDS
 from utils.helpers import decline_name, create_user_link, escape_html
 from storage.user_cache import update_user_cache, get_user_info_by_username
+from storage.json_db import load_chat_relationships, save_chat_relationships
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,8 @@ COMMAND_ALIASES = {
     'стосунки': 'relationships',
     'моїстосунки': 'myrelationships',
     'стата': 'chatstats',
+    'профіль': 'chatstats',
+    'profile': 'chatstats',
     'розлучення': 'breakup',
     'розрив': 'breakup',
     'допомога': 'commands',
@@ -160,7 +164,7 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
     await _send_html_message(context, update.effective_chat.id, response)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Головний обробник текстових повідомлень з підтримкою кешування юзерів та префіксів / та !"""
+    """Головний обробник текстових повідомлень з підтримкою кешування юзерів, трекінгу активності та префіксів / та !"""
     if not update.message:
         return
 
@@ -170,6 +174,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         first_name = user.first_name or user.username or "Користувач"
         if user.username:
             await update_user_cache(user.username, first_name, user.id)
+
+    # Денна статистика (смс та символи за сьогодні, скидається о 00:00)
+    if update.message.from_user and update.effective_chat and update.message.text:
+        chat_id = update.effective_chat.id
+        user = update.message.from_user
+        text_content = update.message.text
+
+        try:
+            chat_data = await load_chat_relationships(chat_id)
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            daily = chat_data.setdefault('daily_stats', {})
+
+            if daily.get('date') != today_str:
+                daily['date'] = today_str
+                daily['users'] = {}
+
+            users_daily = daily.setdefault('users', {})
+            u_key = str(user.id)
+
+            if u_key not in users_daily:
+                users_daily[u_key] = {
+                    'name': user.first_name or user.username or "Користувач",
+                    'user_id': user.id,
+                    'messages': 0,
+                    'chars': 0
+                }
+
+            users_daily[u_key]['name'] = user.first_name or user.username or "Користувач"
+            users_daily[u_key]['messages'] += 1
+            users_daily[u_key]['chars'] += len(text_content)
+
+            await save_chat_relationships(chat_id, chat_data)
+        except Exception as e:
+            logger.warning(f"Помилка оновлення денної статистики: {e}")
 
     if not update.message.text:
         return

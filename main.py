@@ -78,6 +78,7 @@ def main() -> None:
         application.add_handler(CommandHandler("divorce", breakup_command))
         application.add_handler(CommandHandler("commands", commands_command))
         application.add_handler(CommandHandler("chatstats", chat_stats_command))
+        application.add_handler(CommandHandler("profile", chat_stats_command))
 
         # Обробники інлайн кнопок
         application.add_handler(CallbackQueryHandler(handle_relationship_callback, pattern=r"^(rel_|breakup_)"))
