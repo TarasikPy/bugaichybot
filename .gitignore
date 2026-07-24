@@ -1,0 +1,17 @@
+# Секрети та конфігурації
+.env
+
+# Python кєш та згенеровані файли
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Дані чатів
+relationships_chats/
+wisdom_chats/
+*.json
+
+# Редактори та середовища
+.vscode/
+.idea/
+venv/
