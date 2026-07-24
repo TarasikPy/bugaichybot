@@ -1,6 +1,13 @@
 import logging
 from telegram import Update, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, BotCommand
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    MessageReactionHandler,
+    filters
+)
 
 from config.settings import BOT_TOKEN
 from handlers.basic import (
@@ -19,7 +26,7 @@ from handlers.relationships import (
     breakup_command,
     handle_relationship_callback
 )
-from handlers.analytics import chat_stats_command
+from handlers.analytics import chat_stats_command, profile_command, handle_reaction_update
 from handlers.actions import handle_message
 
 # Налаштування логування
@@ -33,7 +40,8 @@ async def setup_bot_commands(application: Application) -> None:
     """Налаштовує меню команд бота"""
     private_commands = [
         BotCommand("start", "Головне меню бота"),
-        BotCommand("help", "Довідка")
+        BotCommand("help", "Довідка"),
+        BotCommand("profile", "👤 Психологічний профіль та статистика")
     ]
 
     group_commands = [
@@ -44,7 +52,8 @@ async def setup_bot_commands(application: Application) -> None:
         BotCommand("commands", "📋 Всі команди"),
         BotCommand("dating", "💫 Розпочати стосунки (пропозиція з підтвердженням)"),
         BotCommand("breakup", "💔 Розірвати стосунки"),
-        BotCommand("chatstats", "📊 Аналітика активності чату")
+        BotCommand("chatstats", "📊 Аналітика активності чату"),
+        BotCommand("profile", "👤 Психологічний профіль та статистика")
     ]
 
     await application.bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
@@ -78,7 +87,10 @@ def main() -> None:
         application.add_handler(CommandHandler("divorce", breakup_command))
         application.add_handler(CommandHandler("commands", commands_command))
         application.add_handler(CommandHandler("chatstats", chat_stats_command))
-        application.add_handler(CommandHandler("profile", chat_stats_command))
+        application.add_handler(CommandHandler("profile", profile_command))
+
+        # Обробник реакцій користувачів
+        application.add_handler(MessageReactionHandler(handle_reaction_update))
 
         # Обробники інлайн кнопок
         application.add_handler(CallbackQueryHandler(handle_relationship_callback, pattern=r"^(rel_|breakup_)"))

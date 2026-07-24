@@ -9,6 +9,8 @@ __pycache__/
 # Дані чатів
 relationships_chats/
 wisdom_chats/
+data/
+result.json
 *.json
 
 # Редактори та середовища

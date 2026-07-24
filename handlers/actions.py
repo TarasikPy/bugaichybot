@@ -18,8 +18,8 @@ COMMAND_ALIASES = {
     'стосунки': 'relationships',
     'моїстосунки': 'myrelationships',
     'стата': 'chatstats',
-    'профіль': 'chatstats',
-    'profile': 'chatstats',
+    'профіль': 'profile',
+    'profile': 'profile',
     'розлучення': 'breakup',
     'розрив': 'breakup',
     'допомога': 'commands',
@@ -175,13 +175,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if user.username:
             await update_user_cache(user.username, first_name, user.id)
 
-    # Денна статистика (смс та символи за сьогодні, скидається о 00:00)
+    # Живий трекінг статистики у storage/analytics_db.py
     if update.message.from_user and update.effective_chat and update.message.text:
         chat_id = update.effective_chat.id
         user = update.message.from_user
         text_content = update.message.text
 
         try:
+            from storage.analytics_db import record_live_message
+            await record_live_message(chat_id, user, text_content)
+
+            # Також оновлюємо сумісний daily_stats у relationships_chats
             chat_data = await load_chat_relationships(chat_id)
             today_str = datetime.now().strftime('%Y-%m-%d')
             daily = chat_data.setdefault('daily_stats', {})
@@ -207,7 +211,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             await save_chat_relationships(chat_id, chat_data)
         except Exception as e:
-            logger.warning(f"Помилка оновлення денної статистики: {e}")
+            logger.warning(f"Помилка оновлення статистики: {e}")
 
     if not update.message.text:
         return
@@ -232,6 +236,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             elif command == 'chatstats':
                 from handlers.analytics import chat_stats_command
                 await chat_stats_command(update, context)
+                return
+            elif command == 'profile':
+                from handlers.analytics import profile_command
+                await profile_command(update, context)
                 return
             elif command == 'breakup':
                 from handlers.relationships import breakup_command
