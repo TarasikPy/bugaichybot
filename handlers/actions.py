@@ -5,11 +5,21 @@ from telegram.ext import ContextTypes
 
 from config.names import USERS_MAP
 from config.levels import ALL_COUPLE_COMMANDS, VALID_COMMANDS
-from utils.helpers import decline_name, create_html_user_link, escape_html
-from handlers.relationships import handle_couple_command
+from utils.helpers import decline_name, create_user_link, escape_html
 from storage.user_cache import update_user_cache, get_user_info_by_username
 
 logger = logging.getLogger(__name__)
+
+# Мапінг українських аліасів для зручності користувачів
+COMMAND_ALIASES = {
+    'пропозиція': 'dating',
+    'стосунки': 'relationships',
+    'моїстосунки': 'myrelationships',
+    'стата': 'chatstats',
+    'розлучення': 'breakup',
+    'розрив': 'breakup',
+    'допомога': 'commands',
+}
 
 async def _send_html_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) -> None:
     """Відправляє повідомлення у чат у форматі HTML з fallback на чистий текст"""
@@ -29,6 +39,9 @@ async def _send_html_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, t
 
 async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обробляє звичайні команди дій з підтримкою REPLY (відповіді на повідомлення), @username згадок, USERS_MAP та клікабельних HTML посилань tg://user?id="""
+    if not update.message:
+        return
+
     message_text = update.message.text.strip()
     from_user = update.message.from_user
     bot_username = context.bot.username
@@ -40,13 +53,13 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
     if sender_username and sender_username in USERS_MAP:
         sender_name = USERS_MAP[sender_username]
     else:
-        sender_name = from_user.first_name or from_user.username or "Користувач"
+        sender_name = from_user.first_name or from_user.username or "Користувач" if from_user else "Користувач"
 
     # Завжди оновлюємо динамічний кеш юзерів
     if from_user and from_user.username:
         await update_user_cache(from_user.username, sender_name, sender_id)
 
-    # МИТТЄВО намагаємося видалити вихідне повідомлення користувача
+    # Намагаємося видалити вихідне повідомлення користувача (для чистоти чату)
     try:
         await update.message.delete()
     except Exception as e:
@@ -110,14 +123,14 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
             if not target_display_name:
                 target_display_name = raw_target
 
-    # ВАРІАНТ В: Дії без отримувача (наприклад /дав жінкам права або !дав жінкам права)
+    # ВАРІАНТ В: Дії без отримувача
     else:
         action_match = re.match(r'^[/\!](.+)$', message_text)
         if action_match:
             action_text = action_match.group(1).strip()
             first_word = action_text.split()[0] if action_text.split() else action_text
             if first_word not in ALL_COUPLE_COMMANDS and first_word not in VALID_COMMANDS:
-                sender_link = create_html_user_link(sender_name, user_id=sender_id)
+                sender_link = create_user_link(sender_id, sender_name)
                 response = f"✨ {sender_link} {escape_html(action_text)}"
 
                 await _send_html_message(context, update.effective_chat.id, response)
@@ -131,19 +144,14 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
         await _send_html_message(context, update.effective_chat.id, "🤖 На мені не можна виконувати дії!")
         return
 
-    # Обов'язково відміняємо ім'я отримувача ("Арма" -> "Арму", "Сергій" -> "Сергія")
+    # Відмінюємо ім'я отримувача ("Арма" -> "Арму", "Сергій" -> "Сергія")
     target_declined = decline_name(target_display_name) if target_display_name else ""
 
-    # Генеруємо HTML-посилання для ВІДПРАВНИКА та ОТРИМУВАЧА
-    sender_link = create_html_user_link(sender_name, user_id=sender_id)
+    # Генеруємо HTML-посилання для ВІДПРАВНИКА та ОТРИМУВАЧА через create_user_link
+    sender_link = create_user_link(sender_id, sender_name)
+    target_link = create_user_link(target_user_id, target_declined)
 
-    if target_user_id:
-        target_link = f'<a href="tg://user?id={target_user_id}">{escape_html(target_declined)}</a>'
-    else:
-        target_link = f'<b>{escape_html(target_declined)}</b>'
-
-    # Формування підсумкового речення:
-    # ✨ <a href="tg://user?id=111">KIYOTAKA</a> вдарив <a href="tg://user?id=222">Арму</a> лопатою по голові
+    # Формування підсумкового речення з клікабельними посиланнями
     response = f"✨ {sender_link} {escape_html(action)} {target_link}"
 
     if rest_text:
@@ -156,7 +164,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not update.message:
         return
 
-    # Завжди оновлюємо кеш юзернейма та first_name при будь-якому повідомленні
+    # Оновлюємо кеш юзернейма та first_name при будь-якому повідомленні
     if update.message.from_user:
         user = update.message.from_user
         first_name = user.first_name or user.username or "Користувач"
@@ -169,11 +177,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     message_text = update.message.text.strip()
 
     if message_text.startswith('/') or message_text.startswith('!'):
-        command_match = re.match(r'^[/\!](\w+)', message_text)
+        command_match = re.match(r'^[/\!](\S+)', message_text)
         if command_match:
-            command = command_match.group(1)
+            raw_cmd = command_match.group(1).lower()
+            command = COMMAND_ALIASES.get(raw_cmd, raw_cmd)
 
-            if command in ALL_COUPLE_COMMANDS or command == 'trio':
+            # Перенаправлення аліасів до відповідних команд
+            if command == 'relationships':
+                from handlers.relationships import relationships_command
+                await relationships_command(update, context)
+                return
+            elif command == 'myrelationships':
+                from handlers.relationships import my_relationships_command
+                await my_relationships_command(update, context)
+                return
+            elif command == 'chatstats':
+                from handlers.analytics import chat_stats_command
+                await chat_stats_command(update, context)
+                return
+            elif command == 'breakup':
+                from handlers.relationships import breakup_command
+                await breakup_command(update, context)
+                return
+
+            if command in ALL_COUPLE_COMMANDS or command in ('dating', 'trio'):
+                from handlers.relationships import handle_couple_command
                 target = None
                 if '@' in message_text:
                     target_match = re.search(r'@(\S+)', message_text)

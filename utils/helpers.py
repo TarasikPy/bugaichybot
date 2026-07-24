@@ -93,34 +93,27 @@ def format_duration(start_date: str) -> str:
             else:
                 return f"{years} років {final_days} днів"
 
-def create_html_user_link(name: str, user_id=None) -> str:
-    """Створює клікабельне HTML-посилання на профіль користувача (tg://user?id=)"""
-    safe_name = escape_html(name)
+def create_user_link(user_id=None, name: str = None, **kwargs) -> str:
+    """Створює клікабельне HTML-посилання на профіль користувача (tg://user?id=).
+    Гнучка функція: підтримує як create_user_link(user_id, name), так і create_user_link(name, user_id).
+    """
+    if isinstance(user_id, str) and (isinstance(name, int) or name is None):
+        user_id, name = name, user_id
+
+    if not name and user_id:
+        name = str(user_id)
+    elif not name:
+        name = "Користувач"
+
+    safe_name = escape_html(str(name))
     if user_id:
         return f'<a href="tg://user?id={user_id}">{safe_name}</a>'
     else:
         return f'<b>{safe_name}</b>'
 
-def create_user_link(name: str, user_id=None, is_sender=False, is_action=False, is_relationship_display=False) -> str:
-    """Створює безпечне посилання на користувача з екрануванням спецсимволів (Markdown)"""
-    safe_name = escape_markdown(name)
-    if is_sender:
-        return safe_name
-    elif is_action:
-        if user_id:
-            return f"[✦**{safe_name}**](tg://user?id={user_id})"
-        else:
-            return f"✦**{safe_name}**"
-    elif is_relationship_display:
-        if user_id:
-            return f"[✦💖**{safe_name}**💖](tg://user?id={user_id})"
-        else:
-            return f"✦💖**{safe_name}**💖"
-    else:
-        if user_id:
-            return f"[**{safe_name}**](tg://user?id={user_id})"
-        else:
-            return f"**{safe_name}**"
+def create_html_user_link(name: str, user_id=None) -> str:
+    """Сумісний аліас для створення клікабельного HTML-посилання"""
+    return create_user_link(user_id=user_id, name=name)
 
 def find_user_relationships(user_name: str, relationships: dict) -> list:
     """Знаходить всі стосунки користувача"""

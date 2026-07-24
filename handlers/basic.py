@@ -1,218 +1,89 @@
 import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from utils.helpers import create_user_link
+
+HELP_TEXT = (
+    "📋 <b>Список усіх команд бота:</b>\n\n"
+    "📌 <b>Основні та розважальні:</b>\n"
+    "• /start — Головне меню\n"
+    "• /help — Список усіх команд\n"
+    "• /flipcoin — Кинути монетку (Орел/Решка)\n"
+    "• <code>!стата</code> — Загальна статистика та активність чату\n\n"
+    "🎭 <b>Рольові дії (RP):</b>\n"
+    "• <code>!вдарив [хтось]</code> або <code>!вєбав</code> (у відповідь) — Вдарити користувача\n"
+    "• <code>!збив</code> / <code>!йойкнув</code> / <code>!обняв</code> — Інші РП-дії (з підтримкою reply та @mentions)\n\n"
+    "❤️ <b>Стосунки та Парні команди:</b>\n"
+    "• /dating (або <code>!пропозиція</code>) — Запропонувати зустрічатися (потребує згоди)\n"
+    "• /relationships (або <code>!стосунки</code>) — Список усіх активних пар чату\n"
+    "• /myrelationships — Інформація про власні стосунки\n"
+    "• /breakup — Розірвати стосунки\n\n"
+    "💕 <b>Взаємодія у парах (+очки рівнів):</b>\n"
+    "• /kiss — Поцілувати (+3 очки)\n"
+    "• /hug — Обійняти (+2 очки)\n"
+    "• /love — Заявити про кохання (+4 очки)\n"
+    "• /date — Піти на побачення (+5 очок)\n"
+    "• /gift — Подарувати подарунок (+3 очки)\n\n"
+    "✨ <i>Взаємодійте та розвивайте рівень своїх стосунків!</i>"
+)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє команду /start та /help"""
+    """Обробляє команду /start"""
+    user = update.message.from_user if update.message else None
+    user_link = create_user_link(user.id, user.first_name) if user else "користувачу"
+
     keyboard = [
-        [InlineKeyboardButton("📖 Інструкція", callback_data='instructions')],
-        [InlineKeyboardButton("📞 Зв'язок", callback_data='contact')],
-        [InlineKeyboardButton("ℹ️ Про бота", callback_data='about')],
-        [InlineKeyboardButton("💡 Приклади", callback_data='examples')]
+        [InlineKeyboardButton("📖 Довідка команд", callback_data='instructions')],
+        [InlineKeyboardButton("❤️ Стосунки", callback_data='about_relationships')],
+        [InlineKeyboardButton("📊 Статистика", callback_data='chat_stats_cb')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     welcome_text = (
-        "🎭 Привіт! Я бот для створення веселих дій та управління стосунками!\n\n"
-        "💕 **Детальна система рівнів стосунків:**\n"
-        "👋 Знайомство → 😊 Симпатія → 💕 Романтичні почуття → 😍 Закоханість → ❤️ Кохання → 💖 Глибоке кохання (можна одружитись) → 💝 Душевна єдність → 💞 Вічне кохання → 💫 Божественне кохання → ✨ Абсолютна єдність\n\n"
-        "**Можливості:**\n"
-        "• Розширена система стосунків з очками\n"
-        "• Підтримка стосунків на 3 особи\n"
-        "• Особливі команди для одружених пар\n"
-        "• Підтримка будь-яких імен після @ або з !\n\n"
-        "**Основні команди:**\n"
-        "`/дія @користувач додаткові дії. зі словами` або `!дія @користувач`\n"
-        "`/dating` - розпочати стосунки (відповідь на повідомлення)\n"
-        "`/kiss`, `/hug`, `/love` - дії з партнером\n"
-        "`/propose` - зробити пропозицію (потрібен 5 рівень)\n\n"
-        "Вибери опцію з меню нижче! 👇"
+        f"🎭 <b>Привіт, {user_link}! Я бот для інтерактивних РП-дій та системи стосунків!</b>\n\n"
+        f"{HELP_TEXT}\n\n"
+        "Обери потрібну опцію з меню нижче! 👇"
     )
 
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='Markdown')
+    await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='HTML')
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обробляє команду /help"""
+    await update.message.reply_text(HELP_TEXT, parse_mode='HTML')
+
+async def commands_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показує красивий структурований список всіх команд"""
+    await update.message.reply_text(HELP_TEXT, parse_mode='HTML')
 
 async def flipcoin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда для кидання монети"""
     result = random.choice(["🪙 Орел", "🪙 Решка"])
-    await update.message.reply_text(f"🎲 Результат: {result}")
-
-async def commands_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Показує список всіх команд"""
-    commands_text = (
-        "📋 **Всі команди:**\n\n"
-        "**🎯 Основні команди:**\n"
-        "🎲 `/flipcoin` - кинути монету\n"
-        "💕 `/relationships` - показати всі стосунки\n"
-        "❤️ `/myrelationships` - показати ваші стосунки\n"
-        "💌 `/proposals` - показати активні пропозиції\n"
-        "📊 `/chatstats` - аналітика активності чату\n"
-        "📋 `/commands` - всі команди\n\n"
-        "**💫 Розпочаток стосунків:**\n"
-        "💫 `/dating` - відповідь на повідомлення користувача\n"
-        "👥 `/trio @user1 @user2` - створити стосунки на 3 особи\n\n"
-        "**💕 Команди для пар (+очки):**\n"
-        "💋 `/kiss` - поцілувати (+3 очки)\n"
-        "🤗 `/hug` - обійняти (+2 очки)\n"
-        "💕 `/love` - кохати (+4 очки)\n"
-        "🌹 `/date` - піти на побачення (+5 очок)\n"
-        "😏 `/flirt` - фліртувати (+2 очки)\n"
-        "🎁 `/gift` - подарувати подарунок (+3 очки)\n"
-        "💃 `/dance` - танцювати (+3 очки)\n"
-        "👫 `/hold` - тримати за руку (+2 очки)\n"
-        "🥰 `/cuddle` - обіймається (+3 очки)\n"
-        "🗣️ `/whisper` - шепоче солодкі слова (+3 очки)\n"
-        "😊 `/smile` - посміхається (+1 очко)\n"
-        "😉 `/wink` - підморгує (+1 очко)\n"
-        "🥺 `/compliment` - робить комплімент (+2 очки)\n"
-        "🎉 `/surprise` - робить сюрприз (+4 очки)\n"
-        "🎵 `/serenade` - співає серенаду (+4 очки)\n"
-        "👨‍🍳 `/cook` - готує для (+3 очки)\n"
-        "💆 `/massage` - робить масаж (+3 очки)\n"
-        "💌 `/write` - пише любовного листа (+4 очки)\n"
-        "🧺 `/picnic` - влаштовує пікнік з (+5 очок)\n"
-        "🌟 `/stargazing` - дивиться на зірки (+4 очки)\n"
-        "✈️ `/travel` - подорожує (+6 очок)\n\n"
-        "**💒 Команди для одружених (+очки):**\n"
-        "🏝️ `/honeymoon` - їде в медовий місяць (+10 очок)\n"
-        "🎊 `/anniversary` - святкує річницю (+8 очок)\n"
-        "🍽️ `/family_dinner` - сімейна вечеря (+5 очок)\n"
-        "🏠 `/home_together` - облаштовує дім (+6 очок)\n"
-        "🤝 `/support` - підтримує в важкі часи (+7 очок)\n"
-        "📋 `/plan_future` - планує майбутнє (+6 очок)\n"
-        "🐕 `/adopt_pet` - заводить домашню тварину (+5 очок)\n"
-        "💒 `/renew_vows` - поновлює шлюбні обітниці (+15 очок)\n\n"
-        "**👥 Команди для стосунків на 3 (+очки):**\n"
-        "🤗 `/group_hug` - обіймається разом (+4 очки)\n"
-        "🌹 `/trio_date` - побачення втрьох (+6 очок)\n"
-        "💃 `/group_dance` - танцює втрьох (+5 очок)\n"
-        "✈️ `/trio_travel` - подорожує втрьох (+8 очок)\n"
-        "🤝 `/support_each` - підтримують один одного (+5 очок)\n"
-        "🎉 `/celebrate_together` - святкує разом (+6 очок)\n\n"
-        "**⚖️ Управління стосунками:**\n"
-        "💍 `/propose` - зробити пропозицію\n"
-        "✅ `/accept` - прийняти пропозицію\n"
-        "❌ `/reject` - відхилити пропозицію\n"
-        "💔 `/divorce` - розлучитися (для одружених)\n"
-        "😢 `/breakup` - розстатися\n\n"
-        "**🎭 Дії з користувачами:**\n"
-        "`/вдарив @user додаткові дії. зі словами` або `!вдарив @user`\n"
-        "Підтримка будь-яких імен після @\n\n"
-        "**📊 Рівні стосунків:**\n"
-        "👋 Знайомство (0 очок)\n"
-        "😊 Симпатія (10 очок)\n"
-        "💕 Романтичні почуття (25 очок)\n"
-        "😍 Закоханість (45 очок)\n"
-        "❤️ Кохання (75 очок)\n"
-        "💖 Глибоке кохання (110 очок) - можна одружитись\n"
-        "💝 Душевна єдність (150 очок)\n"
-        "💞 Вічне кохання (200 очок)\n"
-        "💫 Божественне кохання (250 очок)\n"
-        "✨ Абсолютна єдність (300 очок)"
-    )
-
-    await update.message.reply_text(commands_text, parse_mode='Markdown')
+    await update.message.reply_text(f"🎲 Результат: <b>{result}</b>", parse_mode='HTML')
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє натискання кнопок"""
+    """Обробляє натискання інлайн кнопок у головному меню"""
     query = update.callback_query
     await query.answer()
 
-    keyboard = [
-        [InlineKeyboardButton("🔙 Назад до меню", callback_data='back_to_menu')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
     if query.data == 'instructions':
-        instructions_text = (
-            "📖 **Інструкція по використанню бота:**\n\n"
-            "**Формат команди дій:**\n"
-            "`/дія @імя додаткові слова. зі словами` або `!дія @імя` - звичайна дія\n"
-            "Підтримка будь-яких імен після @ (українські, англійські та інші)\n\n"
-            "**Розпочаток стосунків:**\n"
-            "💫 `/dating` - відповідь на повідомлення користувача\n"
-            "👥 `/trio @user1 @user2` - стосунки на 3 особи\n"
-            "Більше не потрібно вказувати партнера в командах!\n\n"
-            "**Команди для пар (автоматично з партнером):**\n"
-            "💋 `/kiss` - поцілувати (+3 очки)\n"
-            "🤗 `/hug` - обійняти (+2 очки)\n"
-            "❤️ `/love` - кохати (+4 очки)\n"
-            "🌹 `/date` - піти на побачення (+5 очок)\n"
-            "🎁 `/gift` - подарувати подарунок (+3 очки)\n\n"
-            "**Особливі команди:**\n"
-            "💍 `/propose` - зробити пропозицію (потрібен 5 рівень - Глибоке кохання)\n"
-            "💒 Команди для одружених після прийняття пропозиції\n"
-            "💔 `/divorce` - розлучитися\n"
-            "😢 `/breakup` - розстатися\n\n"
-            "**Рівні стосунків:**\n"
-            "👋 Знайомство (0) → 😊 Симпатія (10) → 💕 Романтичні почуття (25) → 😍 Закоханість (45) → ❤️ Кохання (75) → 💖 Глибоке кохання (110) - можна одружитись → 💝 Душевна єдність (150) → 💞 Вічне кохання (200) → 💫 Божественне кохання (250) → ✨ Абсолютна єдність (300)"
+        text = HELP_TEXT
+    elif query.data == 'about_relationships':
+        text = (
+            "❤️ <b>Система стосунків:</b>\n\n"
+            "1. 👋 Знайомство (0 очок)\n"
+            "2. 😊 Симпатія (10 очок)\n"
+            "3. 💕 Романтичні почуття (25 очок)\n"
+            "4. 😍 Закоханість (45 очок)\n"
+            "5. ❤️ Кохання (75 очок)\n"
+            "6. 💖 Глибоке кохання (110 очок)\n"
+            "7. 💝 Душевна єдність (150 очок)\n"
+            "8. 💞 Вічне кохання (200 очок)\n"
+            "9. 💫 Божественне кохання (250 очок)\n"
+            "10. ✨ Абсолютна єдність (300 очок)"
         )
-        await query.edit_message_text(instructions_text, reply_markup=reply_markup, parse_mode='Markdown')
+    elif query.data == 'chat_stats_cb':
+        text = "📊 Для перегляду статистики використовуйте команду /chatstats або <code>!стата</code> у чаті."
+    else:
+        text = "Опція вибрана."
 
-    elif query.data == 'examples':
-        examples_text = (
-            "💡 **Приклади використання:**\n\n"
-            "**Прості дії (підтримуються / та !):**\n"
-            "• `/поцілував @Олена` або `!поцілував @Олена` → ✨ Іван поцілував ✦**Олену**\n"
-            "• `!вдарив @John, сильно` → ✨ Іван вдарив ✦**John** зі словами сильно\n"
-            "• `/вдарив @Mike та зломив хребет. я тебе ненавиджу` → з додатковими діями та словами\n\n"
-            "**Команди для стосунків:**\n"
-            "• `/kiss` → 💋 поцілунок з партнером (+3 очки)\n"
-            "• `/date` → 🌹 романтичне побачення (+5 очок)\n"
-            "• `/propose` → 💍 пропозиція (потрібен 5 рівень)\n"
-            "• `/honeymoon` → 🏝️ медовий місяць (тільки для одружених)\n\n"
-            "**Стосунки на 3:**\n"
-            "• `/group_hug` → 🤗 групове обіймання (+4 очки)\n"
-            "• `/trio_travel` → ✈️ подорож втрьох (+8 очок)\n\n"
-            "**Інші команди:**\n"
-            "• `/flipcoin` → 🪙 Орел або Решка\n"
-            "• `/relationships` → 💕 список всіх пар\n"
-            "• `/myrelationships` → ❤️ ваші стосунки з детальним описом"
-        )
-        await query.edit_message_text(examples_text, reply_markup=reply_markup, parse_mode='Markdown')
-
-    elif query.data == 'contact':
-        contact_text = (
-            "📞 **Контакти та підтримка:**\n\n"
-            "👨‍💻 Розробник: @shadow\\_tar\n"
-            "💬 Для питань та пропозицій звертайтесь до розробника\n\n"
-            "🐛 Знайшли помилку? Повідомте нам!\n"
-            "💡 Є ідеї для покращення? Ми слухаємо!"
-        )
-        await query.edit_message_text(contact_text, reply_markup=reply_markup, parse_mode='Markdown')
-
-    elif query.data == 'about':
-        about_text = (
-            "ℹ️ **Про бота:**\n\n"
-            "🎭 Бот для створення веселих дій та управління детальними стосунками\n"
-            "💕 Розширена система рівнів стосунків з очками та описами\n"
-            "👥 Підтримка стосунків на 2 або 3 особи\n"
-            "💒 Особливі команди для одружених пар\n"
-            "🌍 Підтримка будь-яких імен (українські, англійські, інші)\n"
-            "🎯 Призначений для розваг у групових чатах\n"
-            "⚡ Швидко обробляє команди з підтримкою / та !\n\n"
-            "**Версія:** 4.0\n"
-            "**Створено:** 2024"
-        )
-        await query.edit_message_text(about_text, reply_markup=reply_markup, parse_mode='Markdown')
-
-    elif query.data == 'back_to_menu':
-        keyboard = [
-            [InlineKeyboardButton("📖 Інструкція", callback_data='instructions')],
-            [InlineKeyboardButton("📞 Зв'язок", callback_data='contact')],
-            [InlineKeyboardButton("ℹ️ Про бота", callback_data='about')],
-            [InlineKeyboardButton("💡 Приклади", callback_data='examples')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        welcome_text = (
-            "🎭 Привіт! Я бот для створення веселих дій та управління стосунками!\n\n"
-            "💕 **Детальна система рівнів стосунків:**\n"
-            "👋 Знайомство → 😊 Симпатія → 💕 Романтичні почуття → 😍 Закоханість → ❤️ Кохання → 💖 Глибоке кохання (можна одружитись) → 💝 Душевна єдність → 💞 Вічне кохання → 💫 Божественне кохання → ✨ Абсолютна єдність\n\n"
-            "**Основні команди:**\n"
-            "`/дія @користувач додатковий текст. зі словами` або `!дія @користувач`\n"
-            "`/dating` - розпочати стосунки (відповідь на повідомлення)\n"
-            "`/kiss` - поцілувати партнера (+3 очки)\n"
-            "`/propose` - зробити пропозицію (потрібен 5 рівень)\n\n"
-            "Вибери опцію з меню нижче! 👇"
-        )
-        await query.edit_message_text(welcome_text, reply_markup=reply_markup, parse_mode='Markdown')
+    await query.edit_message_text(text=text, parse_mode='HTML')
