@@ -1,7 +1,14 @@
 import re
+import html
 from datetime import datetime
 from config.names import MALE_NAMES_DECLENSION, FEMALE_NAMES_DECLENSION
 from config.levels import RELATIONSHIP_LEVELS
+
+def escape_html(text: str) -> str:
+    """Екранує спеціальні символи HTML (<, >, &)"""
+    if not text:
+        return ""
+    return html.escape(str(text))
 
 def escape_markdown(text: str) -> str:
     """Екранує спеціальні символи Markdown (наприклад, _, *, [, ], `)"""
@@ -86,8 +93,24 @@ def format_duration(start_date: str) -> str:
             else:
                 return f"{years} років {final_days} днів"
 
+def create_html_user_link(name: str, user_id=None, is_sender=False, is_action=False) -> str:
+    """Створює HTML-посилання на користувача з жирним шрифтом"""
+    safe_name = escape_html(name)
+    if is_sender:
+        return f"<b>{safe_name}</b>"
+    elif is_action:
+        if user_id:
+            return f'<a href="tg://user?id={user_id}"><b>{safe_name}</b></a>'
+        else:
+            return f"<b>{safe_name}</b>"
+    else:
+        if user_id:
+            return f'<a href="tg://user?id={user_id}"><b>{safe_name}</b></a>'
+        else:
+            return f"<b>{safe_name}</b>"
+
 def create_user_link(name: str, user_id=None, is_sender=False, is_action=False, is_relationship_display=False) -> str:
-    """Створює безпечне посилання на користувача з екрануванням спецсимволів"""
+    """Створює безпечне посилання на користувача з екрануванням спецсимволів (Markdown)"""
     safe_name = escape_markdown(name)
     if is_sender:
         return safe_name
