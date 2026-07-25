@@ -27,6 +27,7 @@ from handlers.relationships import (
     handle_relationship_callback
 )
 from handlers.analytics import chat_stats_command, profile_command, handle_reaction_update
+from handlers.weather import weather_command
 from handlers.actions import handle_message
 
 # Налаштування логування
@@ -41,7 +42,8 @@ async def setup_bot_commands(application: Application) -> None:
     private_commands = [
         BotCommand("start", "Головне меню бота"),
         BotCommand("help", "Довідка"),
-        BotCommand("profile", "👤 Психологічний профіль та статистика")
+        BotCommand("profile", "👤 Психологічний профіль та статистика"),
+        BotCommand("weather", "🌤 Погода в місті")
     ]
 
     group_commands = [
@@ -53,7 +55,8 @@ async def setup_bot_commands(application: Application) -> None:
         BotCommand("dating", "💫 Розпочати стосунки (пропозиція з підтвердженням)"),
         BotCommand("breakup", "💔 Розірвати стосунки"),
         BotCommand("chatstats", "📊 Аналітика активності чату"),
-        BotCommand("profile", "👤 Психологічний профіль та статистика")
+        BotCommand("profile", "👤 Психологічний профіль та статистика"),
+        BotCommand("weather", "🌤 Погода в місті")
     ]
 
     await application.bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
@@ -88,6 +91,7 @@ def main() -> None:
         application.add_handler(CommandHandler("commands", commands_command))
         application.add_handler(CommandHandler("chatstats", chat_stats_command))
         application.add_handler(CommandHandler("profile", profile_command))
+        application.add_handler(CommandHandler("weather", weather_command))
 
         # Обробник реакцій користувачів
         application.add_handler(MessageReactionHandler(handle_reaction_update))

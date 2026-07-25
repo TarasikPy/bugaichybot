@@ -73,18 +73,43 @@ def extract_text(text_field) -> str:
     return ""
 
 def create_fallback_profile(user_name: str, sample_messages: list) -> dict:
-    """Генерує дефолтний психологічний профіль при відсутності GEMINI_API_KEY"""
+    """Генерує динамічний та унікальний психологічний профіль з вибірки текстів користувача при відсутності GEMINI_API_KEY"""
     roles = [
-        "Головний філолог групи", "Підпільний бізнесмен", "Нічний філософ",
-        "Душа Компанії", "Головний Інтелектуал", "Тіньовий Кардинал",
-        "Генератор Мемів", "Хранитель Чату"
+        "Тіньовий Кардинал", "Головний Філолог спільноти", "Підпільний Темщик",
+        "Нічний Мемолог", "Майстер Сарказму", "Верховний Арбітр",
+        "Філософ Опівночі", "Король Іронії"
     ]
     role_idx = sum(ord(c) for c in user_name) % len(roles)
+
+    # Витягуємо унікальні слова та теми з повідомлень користувача
+    words_counter = Counter()
+    phrases = []
+    for msg in sample_messages:
+        clean = re.sub(r'[^\w\s]', '', msg.lower())
+        for w in clean.split():
+            if len(w) >= 4 and w not in STOP_WORDS:
+                words_counter[w] += 1
+        if 15 <= len(msg) <= 60:
+            phrases.append(msg)
+
+    top_words = [w.capitalize() for w, _ in words_counter.most_common(5)]
+    topics = top_words[:3] if top_words else ["Гумор", "Нічні розмови", "Спілкування"]
+
+    catchphrases = phrases[:2] if phrases else [f"«{w}»" for w in top_words[:2]] if top_words else ["База", "Пон"]
+    if not catchphrases:
+        catchphrases = ["База", "Йоу"]
+
+    roast_msg = phrases[2] if len(phrases) > 2 else (sample_messages[0] if sample_messages else "Любить писати багато та розлого.")
+    roast = f"У чаті запам'ятовується виразом: «{roast_msg[:60]}...»" if len(roast_msg) > 60 else f"У чаті запам'ятовується фірмовою фразою: «{roast_msg}»"
+
+    character = f"{user_name} вирізняється унікальною манерою мовлення та часто використовує специфічний сленг. Частіше обговорює теми {', '.join(topics[:2])}, вміє тримати увагу співрозмовників та вести динамічний діалог."
+
     return {
         "role": roles[role_idx],
-        "character": f"{user_name} — активний дописувач чату з унікальним темпераментом та манерою спілкування.",
-        "topics": ["Чат та спільнота", "Актуальні події", "Гумор"],
-        "roast": "Любить писати в чат, коли інші вже спалахують або сплять."
+        "character": character,
+        "topics": topics,
+        "catchphrases": catchphrases,
+        "roast": roast
     }
 
 def generate_gemini_profile(user_name: str, sample_messages: list, api_key: str) -> dict:
@@ -92,19 +117,24 @@ def generate_gemini_profile(user_name: str, sample_messages: list, api_key: str)
     if not api_key or api_key.startswith("your_"):
         return create_fallback_profile(user_name, sample_messages)
 
-    formatted_samples = "\n".join([f"- {msg}" for msg in sample_messages[:150]])
-    prompt = f"""Ти — професійний психоаналітик та гострий на язик спостерігач інтернет-спільнот.
-Проаналізуй надані 150 повідомлень користувача '{user_name}' і створи смішний, глибокий та дуже точний психологічний портрет.
+    # Вибираємо до 300 найдовших та найзмістовніших реплік користувача
+    sorted_samples = sorted(sample_messages, key=len, reverse=True)[:300]
+    formatted_samples = "\n".join([f"- {msg}" for msg in sorted_samples])
+
+    prompt = f"""Ти — гострий на язик, уважний та смішний психоаналітик інтернет-спільнот.
+Твоє завдання — проаналізувати 300 повідомлень конкретної людини з чату ({user_name}) та створити УНІКАЛЬНИЙ, ДЕТАЛЬНИЙ психологічний портрет.
+СТРОГО ЗАБОРОНЕНО використовувати загальні фрази на кшталт "активний дописувач", "актуальні події", "чат та спільнота"!
 
 Повідомлення користувача:
 {formatted_samples}
 
-Поверни ВИНЯТКОВО valid JSON (без маркдаун огорож та вступних слів):
+Поверни ВИНЯТКОВО valid JSON (без маркдаун огорож та вступних слів) за такою структурою:
 {{
-  "role": "Смішна та влучна назва ролі в чаті (наприклад: 'Головний філолог групи', 'Підпільний бізнесмен', 'Нічний філософ')",
-  "character": "Опис манери мовлення, темпераменту, інтелекту (2-3 речення українською)",
-  "topics": ["Улюблена тема 1", "Улюблена тема 2", "Улюблена тема 3"],
-  "roast": "Влучний жарт або спостереження про особливості мовлення (1-2 речення)"
+  "role": "Оригінальне, смішне або статусне звання на основі її текстів (наприклад: 'Тіньовий Кардинал', 'Головний Філолог спільноти', 'Підпільний Темщик', 'Нічний Мемолог')",
+  "character": "Розпиши 3-4 речення про характер, манеру спілкування, рівень серйозності чи сарказму, як поводиться в суперечках, як будує думки",
+  "topics": ["Конкретна тема 1 (наприклад 'Автомобілі')", "Конкретна тема 2 (наприклад 'Кава')", "Конкретна тема 3"],
+  "catchphrases": ["2-3 унікальні слова, вирази чи сленг, які ця людина вживає найчастіше"],
+  "roast": "Смішне спостереження про її звички в чаті чи унікальну фішку"
 }}"""
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
@@ -126,8 +156,9 @@ def generate_gemini_profile(user_name: str, sample_messages: list, api_key: str)
                 parsed = json.loads(raw_text)
                 return {
                     "role": parsed.get("role", "Активний Учасник"),
-                    "character": parsed.get("character", f"{user_name} — активна особистість чату."),
+                    "character": parsed.get("character", f"{user_name} — якравий дописувач спільноти."),
                     "topics": parsed.get("topics", ["Чат"]),
+                    "catchphrases": parsed.get("catchphrases", []),
                     "roast": parsed.get("roast", parsed.get("summary", ""))
                 }
             else:
@@ -201,8 +232,8 @@ def main():
         user_msg_count[user_id] += 1
         user_char_count[user_id] += text_len
 
-        # Вибірка найцікавіших повідомлень для AI-профілю (> 10 символів)
-        if text_len >= 10 and len(user_samples[user_id]) < 150:
+        # Вибірка реплік (> 10 символів) для AI-профілю (до 500 кандидатів на юзера)
+        if text_len >= 10 and len(user_samples[user_id]) < 500:
             user_samples[user_id].append(text)
 
         # Лонгріди (найдовші повідомлення від реальних користувачів)

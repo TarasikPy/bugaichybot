@@ -23,6 +23,8 @@ COMMAND_ALIASES = {
     'розлучення': 'breakup',
     'розрив': 'breakup',
     'допомога': 'commands',
+    'погода': 'weather',
+    'weather': 'weather',
 }
 
 async def _send_html_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) -> None:
@@ -244,6 +246,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             elif command == 'breakup':
                 from handlers.relationships import breakup_command
                 await breakup_command(update, context)
+                return
+            elif command == 'weather':
+                from handlers.weather import weather_command
+                await weather_command(update, context)
                 return
 
             if command in ALL_COUPLE_COMMANDS or command in ('dating', 'trio'):

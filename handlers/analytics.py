@@ -61,11 +61,15 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         target_name = entity.user.first_name or entity.user.username
                         break
 
-            # 2b. Пошук в USERS_MAP (статичні конфігурації)
+            # 2b. Числовий Telegram ID (наприклад `!профіль 878744016`)
+            if not target_user_id and raw_target.isdigit():
+                target_user_id = int(raw_target)
+
+            # 2c. Пошук в USERS_MAP
             if not target_name and raw_target.lower() in USERS_MAP:
                 target_name = USERS_MAP[raw_target.lower()]
 
-            # 2c. Пошук в USERS_CACHE (storage/users_cache.json)
+            # 2d. Пошук в USERS_CACHE (storage/users_cache.json)
             if not target_user_id or not target_name:
                 cached_name, cached_id = await get_user_info_by_username(raw_target)
                 if cached_name and not target_name:
@@ -73,31 +77,34 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 if cached_id and not target_user_id:
                     target_user_id = cached_id
 
-            # 2d. Перевірка якщо передано числовий Telegram ID
-            if not target_user_id and raw_target.isdigit():
-                target_user_id = int(raw_target)
-
             # 2e. Пошук у збереженій історії chat_analytics.json (profiles або top_users)
             if not target_user_id or not target_name:
                 history_data = load_history_analytics()
                 profiles = history_data.get('profiles', {})
-                for p_id_str, p_data in profiles.items():
-                    p_uname = (p_data.get('username') or '').lstrip('@').lower()
-                    p_name = (p_data.get('name') or '').lower()
-                    if (target_username and p_uname == target_username.lower()) or (p_name == raw_target.lower()):
-                        if not target_user_id:
-                            target_user_id = int(p_id_str)
-                        if not target_name:
-                            target_name = p_data.get('name')
-                        break
+
+                # Спроба пошуку за ID
+                target_key = str(target_user_id or raw_target)
+                if target_key in profiles:
+                    p_data = profiles[target_key]
+                    target_user_id = p_data.get('user_id') or int(target_key)
+                    target_name = p_data.get('name', target_name)
+                else:
+                    for p_id_str, p_data in profiles.items():
+                        p_uname = (p_data.get('username') or '').lstrip('@').lower()
+                        p_name = (p_data.get('name') or '').lower()
+                        if (target_username and p_uname == target_username.lower()) or (p_name == raw_target.lower()):
+                            target_user_id = p_data.get('user_id') or int(p_id_str)
+                            target_name = p_data.get('name', target_name)
+                            break
 
                 if not target_user_id or not target_name:
                     top_users = history_data.get('top_users', [])
                     for tu in top_users:
+                        tu_id = tu.get('user_id')
                         tu_name = (tu.get('name') or '').lower()
-                        if tu_name == raw_target.lower():
+                        if (target_user_id and tu_id == target_user_id) or tu_name == raw_target.lower():
                             if not target_user_id:
-                                target_user_id = tu.get('user_id')
+                                target_user_id = tu_id
                             if not target_name:
                                 target_name = tu.get('name')
                             break
@@ -134,22 +141,33 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         role = ai_profile.get('role', 'Учасник чату')
         character = ai_profile.get('character', '')
         topics = ai_profile.get('topics', [])
+        catchphrases = ai_profile.get('catchphrases', [])
         roast = ai_profile.get('roast', '') or ai_profile.get('summary', '')
 
         card_text += f"🎭 <b>Роль у чаті:</b> <code>{escape_html(role)}</code>\n"
+
         if character:
-            card_text += f"🧠 <b>Психологічний портрет та характер:</b> <i>{escape_html(character)}</i>\n"
+            card_text += f"🧠 <b>Детальний психоаналіз:</b> <i>{escape_html(character)}</i>\n"
+
         if topics:
             if isinstance(topics, list):
-                topics_str = ", ".join([escape_html(t) for t in topics])
+                topics_str = ", ".join([escape_html(str(t)) for t in topics])
             else:
                 topics_str = escape_html(str(topics))
-            card_text += f"💡 <b>Інтереси та улюблені теми:</b> {topics_str}\n"
+            card_text += f"💡 <b>Конкретні інтереси та теми:</b> {topics_str}\n"
+
+        if catchphrases:
+            if isinstance(catchphrases, list):
+                phrases_str = ", ".join([f'"{escape_html(str(p))}"' for p in catchphrases])
+            else:
+                phrases_str = escape_html(str(catchphrases))
+            card_text += f"🗣 <b>Коронні фрази або словечки:</b> {phrases_str}\n"
+
         if roast:
-            card_text += f"🎯 <b>Дружній підкол:</b> <i>{escape_html(roast)}</i>\n"
+            card_text += f"🎯 <b>Дружній підкол / Згадка випадку:</b> <i>{escape_html(roast)}</i>\n"
     else:
         card_text += "🎭 <b>Роль у чаті:</b> <code>Активний Учасник</code>\n"
-        card_text += "🧠 <b>Психологічний портрет та характер:</b> <i>Створює атмосферу спільноти та бере активну участь у розмовах.</i>\n"
+        card_text += "🧠 <b>Детальний психоаналіз:</b> <i>Створює атмосферу спільноти та бере активну участь у розмовах.</i>\n"
 
     card_text += "\n📊 <b>Жива статистика за сьогодні:</b>\n"
     if live_stats:
