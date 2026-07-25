@@ -75,17 +75,16 @@ def extract_text(text_field) -> str:
 def create_fallback_profile(user_name: str, sample_messages: list) -> dict:
     """Генерує дефолтний психологічний профіль при відсутності GEMINI_API_KEY"""
     roles = [
-        "Душа Компанії", "Нічний Філософ", "Головний Інтелектуал",
-        "Тіньовий Кардинал", "Генератор Мемів", "Майстер Дискусій",
-        "Хранитель Чату", "Свідомий Критик"
+        "Головний філолог групи", "Підпільний бізнесмен", "Нічний філософ",
+        "Душа Компанії", "Головний Інтелектуал", "Тіньовий Кардинал",
+        "Генератор Мемів", "Хранитель Чату"
     ]
     role_idx = sum(ord(c) for c in user_name) % len(roles)
     return {
         "role": roles[role_idx],
-        "character": f"{user_name} — активний дописувач чату з вираженим унікальним стилем мовлення.",
+        "character": f"{user_name} — активний дописувач чату з унікальним темпераментом та манерою спілкування.",
         "topics": ["Чат та спільнота", "Актуальні події", "Гумор"],
-        "catchphrases": sample_messages[:2] if sample_messages else ["База", "Йоу"],
-        "summary": "Яскравий учасник спільноти, який робить чат живим та динамічним."
+        "roast": "Любить писати в чат, коли інші вже спалахують або сплять."
     }
 
 def generate_gemini_profile(user_name: str, sample_messages: list, api_key: str) -> dict:
@@ -93,22 +92,19 @@ def generate_gemini_profile(user_name: str, sample_messages: list, api_key: str)
     if not api_key or api_key.startswith("your_"):
         return create_fallback_profile(user_name, sample_messages)
 
-    formatted_samples = "\n".join([f"- {msg}" for msg in sample_messages[:100]])
-    prompt = f"""Ти — смішний, точний та спостережливий психолог Telegram-чату спільноти.
-Проаналізуй вибірку з 100 реальних повідомлень користувача '{user_name}':
+    formatted_samples = "\n".join([f"- {msg}" for msg in sample_messages[:150]])
+    prompt = f"""Ти — професійний психоаналітик та гострий на язик спостерігач інтернет-спільнот.
+Проаналізуй надані 150 повідомлень користувача '{user_name}' і створи смішний, глибокий та дуже точний психологічний портрет.
 
+Повідомлення користувача:
 {formatted_samples}
 
-Побудуй красивий, точний та смішний психологічний профіль людини в українському чаті.
-Зверни увагу на її манеру спілкування, тему, сленг, роль у чаті.
-
-Поверни ВИНЯТКОВО valid JSON (без слів довкола та без маркдаун огорож):
+Поверни ВИНЯТКОВО valid JSON (без маркдаун огорож та вступних слів):
 {{
-  "role": "Яскрава та смішна назва ролі в чаті (наприклад: 'Головний Інтелектуал', 'Нічний Філософ', 'Підпільний Бізнесмен')",
-  "character": "Дотепний та влучний опис характеру й поведінки в чаті (2-3 речення українською)",
+  "role": "Смішна та влучна назва ролі в чаті (наприклад: 'Головний філолог групи', 'Підпільний бізнесмен', 'Нічний філософ')",
+  "character": "Опис манери мовлення, темпераменту, інтелекту (2-3 речення українською)",
   "topics": ["Улюблена тема 1", "Улюблена тема 2", "Улюблена тема 3"],
-  "catchphrases": ["Коронна фраза 1", "Коронна фраза 2"],
-  "summary": "Короткий влучний підсумковий висновок про людину (1 речення)"
+  "roast": "Влучний жарт або спостереження про особливості мовлення (1-2 речення)"
 }}"""
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
@@ -129,11 +125,10 @@ def generate_gemini_profile(user_name: str, sample_messages: list, api_key: str)
                 raw_text = res_json['candidates'][0]['content']['parts'][0]['text'].strip()
                 parsed = json.loads(raw_text)
                 return {
-                    "role": parsed.get("role", "Король Чату"),
+                    "role": parsed.get("role", "Активний Учасник"),
                     "character": parsed.get("character", f"{user_name} — активна особистість чату."),
                     "topics": parsed.get("topics", ["Чат"]),
-                    "catchphrases": parsed.get("catchphrases", []),
-                    "summary": parsed.get("summary", "")
+                    "roast": parsed.get("roast", parsed.get("summary", ""))
                 }
             else:
                 print(f"⚠️ Gemini API повернув статус {resp.status_code} для {user_name}")
