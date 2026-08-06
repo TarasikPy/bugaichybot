@@ -50,11 +50,16 @@ async def relationships_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     text = "💕 <b>Активні стосунки в цьому чаті:</b>\n\n"
+    valid_count = 0
     for couple_id, data in relationships.items():
         user1_id = data.get('user1_id')
         user2_id = data.get('user2_id')
-        user1_name = data.get('user1_name') or "Користувач"
-        user2_name = data.get('user2_name') or "Користувач"
+        if not user1_id or not user2_id:
+            continue
+        valid_count += 1
+        from utils.helpers import resolve_user_name_by_id_or_name
+        user1_name = resolve_user_name_by_id_or_name(user1_id, data.get('user1_name'))
+        user2_name = resolve_user_name_by_id_or_name(user2_id, data.get('user2_name'))
 
         duration = format_duration(data.get('start_date', datetime.now().isoformat()))
         total_points = data.get('total_points', 0)
@@ -71,13 +76,18 @@ async def relationships_command(update: Update, context: ContextTypes.DEFAULT_TY
         text += f"{status_emoji} {link1} ❤️ {link2} — {total_points} оч. [{rank_emoji} {rank_name}]\n"
         text += f"📅 <b>Тривалість:</b> {duration}\n\n"
 
+    if valid_count == 0:
+        await _send_html_message(context, chat_id, "💔 Поки що немає активних стосунків у цьому чаті!")
+        return
+
     await _send_html_message(context, chat_id, text)
 
 async def my_relationships_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показує власні стосунки користувача"""
     user = update.message.from_user
     user_id = user.id
-    user_name = user.first_name
+    from utils.helpers import resolve_user_name_by_id_or_name
+    user_name = resolve_user_name_by_id_or_name(user_id, user.first_name)
     chat_id = update.effective_chat.id
     chat_data = await load_chat_relationships(chat_id)
     relationships = chat_data.get('relationships', {})
@@ -89,7 +99,8 @@ async def my_relationships_command(update: Update, context: ContextTypes.DEFAULT
 
         if user_id in (u1_id, u2_id):
             partner_id = u2_id if user_id == u1_id else u1_id
-            partner_name = data.get('user2_name') if user_id == u1_id else data.get('user1_name')
+            raw_pname = data.get('user2_name') if user_id == u1_id else data.get('user1_name')
+            partner_name = resolve_user_name_by_id_or_name(partner_id, raw_pname)
 
             duration = format_duration(data.get('start_date', datetime.now().isoformat()))
             total_points = data.get('total_points', 0)
@@ -98,7 +109,7 @@ async def my_relationships_command(update: Update, context: ContextTypes.DEFAULT
             status = data.get('status', 'dating')
 
             status_text = "💒 Одружені" if status == 'married' else "💕 У стосунках"
-            partner_link = create_user_link(partner_id, partner_name or "Партнер")
+            partner_link = create_user_link(partner_id, partner_name)
 
             user_relationships.append(
                 f"{status_text}\n"

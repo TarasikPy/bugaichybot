@@ -18,6 +18,32 @@ if not os.path.exists(DATA_DIR):
 _live_db_lock = asyncio.Lock()
 _history_cache: Optional[Dict[str, Any]] = None
 _history_mtime: float = 0.0
+_chat_recent_messages: Dict[int, list] = {}
+
+def add_chat_recent_message(chat_id: int, user_name: str, text: str) -> None:
+    """Додає повідомлення у циклічний буфер останніх повідомлень чату (до 50 шт)"""
+    if not text or not text.strip():
+        return
+    now_str = datetime.now().strftime('%H:%M')
+    msg_list = _chat_recent_messages.setdefault(chat_id, [])
+    msg_list.append({
+        'name': user_name,
+        'text': text.strip()[:300],
+        'time': now_str
+    })
+    if len(msg_list) > 50:
+        _chat_recent_messages[chat_id] = msg_list[-50:]
+
+def get_recent_chat_messages(chat_id: int, limit: int = 20) -> str:
+    """Отримує останні повідомлення чату для аналізу ШІ-Суддею"""
+    msg_list = _chat_recent_messages.get(chat_id, [])
+    if not msg_list:
+        return ""
+    recent = msg_list[-limit:]
+    formatted = []
+    for m in recent:
+        formatted.append(f"[{m['time']}] {m['name']}: {m['text']}")
+    return "\n".join(formatted)
 
 def load_history_analytics() -> Dict[str, Any]:
     """Завантажує офлайн-аналітику з data/chat_analytics.json (з кешуванням за mtime)"""
@@ -66,41 +92,55 @@ async def record_live_message(chat_id: int, user: Any, text_content: str) -> Non
     today_str = datetime.now().strftime('%Y-%m-%d')
     now_iso = datetime.now().strftime('%H:%M:%S')
 
-    live_data = await _load_live_analytics()
-    if live_data.get('date') != today_str:
+    async with _live_db_lock:
         live_data = {'date': today_str, 'users': {}}
+        try:
+            if os.path.exists(LIVE_ANALYTICS_FILE):
+                with open(LIVE_ANALYTICS_FILE, 'r', encoding='utf-8') as f:
+                    content = json.load(f)
+                if content.get('date') == today_str:
+                    live_data = content
+        except Exception as e:
+            logger.warning(f"Не вдалося зчитати {LIVE_ANALYTICS_FILE}: {e}")
 
-    users = live_data.setdefault('users', {})
-    u_key = str(user.id)
+        users = live_data.setdefault('users', {})
+        u_key = str(user.id)
 
-    name = user.first_name or user.username or "Користувач"
-    username = user.username or ""
-    words_count = len(text_content.split()) if text_content else 0
-    chars_count = len(text_content) if text_content else 0
+        from utils.helpers import resolve_clean_user_name
+        name = resolve_clean_user_name(user)
+        username = user.username or ""
+        words_count = len(text_content.split()) if text_content else 0
+        chars_count = len(text_content) if text_content else 0
 
-    if u_key not in users:
-        users[u_key] = {
-            'user_id': user.id,
-            'name': name,
-            'username': username,
-            'messages': 0,
-            'chars': 0,
-            'words': 0,
-            'last_active': now_iso,
-            'reactions_given': 0,
-            'reactions_detail': {}
-        }
+        add_chat_recent_message(chat_id, name, text_content)
 
-    u_stat = users[u_key]
-    u_stat['name'] = name
-    if username:
-        u_stat['username'] = username
-    u_stat['messages'] += 1
-    u_stat['chars'] += chars_count
-    u_stat['words'] += words_count
-    u_stat['last_active'] = now_iso
+        if u_key not in users:
+            users[u_key] = {
+                'user_id': user.id,
+                'name': name,
+                'username': username,
+                'messages': 0,
+                'chars': 0,
+                'words': 0,
+                'last_active': now_iso,
+                'reactions_given': 0,
+                'reactions_detail': {}
+            }
 
-    await _save_live_analytics(live_data)
+        u_stat = users[u_key]
+        u_stat['name'] = name
+        if username:
+            u_stat['username'] = username
+        u_stat['messages'] += 1
+        u_stat['chars'] += chars_count
+        u_stat['words'] += words_count
+        u_stat['last_active'] = now_iso
+
+        try:
+            with open(LIVE_ANALYTICS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(live_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Помилка збереження {LIVE_ANALYTICS_FILE}: {e}")
 
 async def record_live_reaction(chat_id: int, user_id: int, user_name: str, emoji: str) -> None:
     """Фіксує реакції (🔥, ❤️, 😭 тощо), які ставлять користувачі"""
@@ -108,32 +148,44 @@ async def record_live_reaction(chat_id: int, user_id: int, user_name: str, emoji
         return
 
     today_str = datetime.now().strftime('%Y-%m-%d')
-    live_data = await _load_live_analytics()
-    if live_data.get('date') != today_str:
+
+    async with _live_db_lock:
         live_data = {'date': today_str, 'users': {}}
+        try:
+            if os.path.exists(LIVE_ANALYTICS_FILE):
+                with open(LIVE_ANALYTICS_FILE, 'r', encoding='utf-8') as f:
+                    content = json.load(f)
+                if content.get('date') == today_str:
+                    live_data = content
+        except Exception as e:
+            logger.warning(f"Не вдалося зчитати {LIVE_ANALYTICS_FILE}: {e}")
 
-    users = live_data.setdefault('users', {})
-    u_key = str(user_id)
+        users = live_data.setdefault('users', {})
+        u_key = str(user_id)
 
-    if u_key not in users:
-        users[u_key] = {
-            'user_id': user_id,
-            'name': user_name or "Користувач",
-            'username': "",
-            'messages': 0,
-            'chars': 0,
-            'words': 0,
-            'last_active': datetime.now().strftime('%H:%M:%S'),
-            'reactions_given': 0,
-            'reactions_detail': {}
-        }
+        if u_key not in users:
+            users[u_key] = {
+                'user_id': user_id,
+                'name': user_name or "Користувач",
+                'username': "",
+                'messages': 0,
+                'chars': 0,
+                'words': 0,
+                'last_active': datetime.now().strftime('%H:%M:%S'),
+                'reactions_given': 0,
+                'reactions_detail': {}
+            }
 
-    u_stat = users[u_key]
-    u_stat['reactions_given'] = u_stat.get('reactions_given', 0) + 1
-    reactions_detail = u_stat.setdefault('reactions_detail', {})
-    reactions_detail[emoji] = reactions_detail.get(emoji, 0) + 1
+        u_stat = users[u_key]
+        u_stat['reactions_given'] = u_stat.get('reactions_given', 0) + 1
+        reactions_detail = u_stat.setdefault('reactions_detail', {})
+        reactions_detail[emoji] = reactions_detail.get(emoji, 0) + 1
 
-    await _save_live_analytics(live_data)
+        try:
+            with open(LIVE_ANALYTICS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(live_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Помилка збереження {LIVE_ANALYTICS_FILE}: {e}")
 
 async def get_user_live_stats(user_id: int) -> Dict[str, Any]:
     """Отримує денну активність конкретного користувача"""

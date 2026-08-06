@@ -57,5 +57,27 @@ async def get_first_name_by_username(username: str):
 
     return None, None
 
+def load_user_cache_sync() -> dict:
+    """Синхронно завантажує кеш користувачів з storage/users_cache.json"""
+    try:
+        if os.path.exists(USER_CACHE_FILE):
+            with open(USER_CACHE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def get_user_name_by_id_sync(user_id: int) -> str:
+    """Шукає first_name за user_id у кеші"""
+    if not user_id:
+        return ""
+    data = load_user_cache_sync()
+    val = data.get(str(user_id))
+    if isinstance(val, str):
+        return val
+    if isinstance(val, dict):
+        return val.get('first_name') or val.get('name') or ""
+    return ""
+
 # Аліас для зворотної сумісності з імпортами
 get_user_info_by_username = get_first_name_by_username

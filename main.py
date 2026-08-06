@@ -26,8 +26,9 @@ from handlers.relationships import (
     breakup_command,
     handle_relationship_callback
 )
-from handlers.analytics import chat_stats_command, profile_command, handle_reaction_update
+from handlers.analytics import chat_stats_command, profile_command, id_command, handle_reaction_update, handle_profile_callback
 from handlers.weather import weather_command
+from handlers.mechanics import roast_command, judge_command, quote_command, risk_command
 from handlers.actions import handle_message
 
 # Налаштування логування
@@ -56,7 +57,11 @@ async def setup_bot_commands(application: Application) -> None:
         BotCommand("breakup", "💔 Розірвати стосунки"),
         BotCommand("chatstats", "📊 Аналітика активності чату"),
         BotCommand("profile", "👤 Психологічний профіль та статистика"),
-        BotCommand("weather", "🌤 Погода в місті")
+        BotCommand("weather", "🌤 Погода в місті чи селі"),
+        BotCommand("roast", "🔥 Прожарка користувача"),
+        BotCommand("judge", "⚖️ Суд Бугайчика / Розбірки чату"),
+        BotCommand("quote", "📜 Золотий фонд чату (цитата дня)"),
+        BotCommand("risk", "🎰 РП-Рулетка подій з лору")
     ]
 
     await application.bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
@@ -91,17 +96,23 @@ def main() -> None:
         application.add_handler(CommandHandler("commands", commands_command))
         application.add_handler(CommandHandler("chatstats", chat_stats_command))
         application.add_handler(CommandHandler("profile", profile_command))
+        application.add_handler(CommandHandler(["id", "whois"], id_command))
         application.add_handler(CommandHandler("weather", weather_command))
+        application.add_handler(CommandHandler("roast", roast_command))
+        application.add_handler(CommandHandler("judge", judge_command))
+        application.add_handler(CommandHandler("quote", quote_command))
+        application.add_handler(CommandHandler("risk", risk_command))
 
         # Обробник реакцій користувачів
         application.add_handler(MessageReactionHandler(handle_reaction_update))
 
         # Обробники інлайн кнопок
+        application.add_handler(CallbackQueryHandler(handle_profile_callback, pattern=r"^prof_"))
         application.add_handler(CallbackQueryHandler(handle_relationship_callback, pattern=r"^(rel_|breakup_)"))
         application.add_handler(CallbackQueryHandler(button_callback))
 
-        # Обробники повідомлень (включаючи підтримку префікса ! та /)
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        # Обробники повідомлень (включаючи підтримку префікса ! та /, а також форвардів та медіа)
+        application.add_handler(MessageHandler(~filters.COMMAND, handle_message))
         application.add_handler(MessageHandler(filters.COMMAND, handle_message))
 
         print("🚀 Бот успішно запущений з підтвердженням стосунків та структурованою довідкою...")

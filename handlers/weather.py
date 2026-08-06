@@ -112,12 +112,16 @@ async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             emoji, desc = WEATHER_CODES.get(weathercode, ("🌤", "Погода"))
             country_str = f" ({country})" if country else ""
 
+            from utils.bugaichyk_ai import get_bugaichyk_weather_commentary
+            bugaichyk_comment = await get_bugaichyk_weather_commentary(city_name, temp, desc, feels_like)
+
             card_text = (
                 f"{emoji} <b>Погода в місті {escape_html(city_name)}{country_str}:</b>\n\n"
                 f"🌡 <b>Температура:</b> {temp}°C (відчувається як {feels_like}°C)\n"
                 f"💨 <b>Вітер:</b> {windspeed} км/год\n"
                 f"💧 <b>Вологість:</b> {humidity}%\n"
-                f"📝 <b>Стан:</b> {desc}\n"
+                f"📝 <b>Стан:</b> {desc}\n\n"
+                f"💬 <b>Бугайчик каже:</b>\n<i>{escape_html(bugaichyk_comment)}</i>"
             )
 
             await update.message.reply_text(card_text, parse_mode='HTML')
