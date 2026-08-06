@@ -76,8 +76,8 @@ async def judge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             raw_u = match.group(1).lstrip('@')
             user2 = resolve_clean_user_name(raw_name=raw_u)
 
-    # Отримуємо останні 20 повідомлень чату
-    recent_history = get_recent_chat_messages(chat_id, limit=20)
+    # Отримуємо останні 100 повідомлень чату для глибокого аналізу срачу
+    recent_history = get_recent_chat_messages(chat_id, limit=100)
 
     # 3. Якщо user2 досі не визначено — беремо останнього активного спікера з історії (ігноруючи команди бота)
     if not user2 and recent_history:

@@ -218,6 +218,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Живий трекінг статистики у storage/analytics_db.py
     msg_content = (update.message.text or update.message.caption or "").strip()
 
+    # 0. Перевірка на таємні команди від власника в ЛС бота (!пиши, !скан, /rescan)
+    if update.effective_chat.type == 'private':
+        sender_id = update.message.from_user.id if update.message and update.message.from_user else 0
+        if sender_id == 1318789006:
+            # Таємна команда пересканування статистики для власника
+            if re.match(r'^(?:!скан|/rescan|!синхрон)', msg_content, re.IGNORECASE):
+                from storage.analytics_db import rescan_and_sync_analytics
+                counts = rescan_and_sync_analytics()
+                info = "\n".join([f"• <b>{k}</b>: {v} смс" for k, v in counts.items()]) if counts else "Немає нових повідомлень."
+                await update.message.reply_text(f"📊 <b>Аналітику та статистику успішно проскановано й оновлено!</b>\n\n{info}", parse_mode='HTML')
+                return
+
+        say_match = re.match(r'^(?:!пиши|/пиши|/say)\s+(.+)', msg_content, re.DOTALL | re.IGNORECASE)
+        if say_match:
+            if sender_id != 1318789006:
+                return  # Мовчки ігноруємо для всіх інших користувачів
+
+            broadcast_text = say_match.group(1).strip()
+            from storage.analytics_db import get_all_active_chat_ids
+            from utils.helpers import format_ai_response_to_html
+
+            formatted_text = format_ai_response_to_html(broadcast_text)
+            target_chats = get_all_active_chat_ids()
+            sent_count = 0
+
+            for cid in target_chats:
+                try:
+                    await context.bot.send_message(chat_id=cid, text=formatted_text, parse_mode='HTML')
+                    sent_count += 1
+                except Exception as e:
+                    logger.error(f"Помилка трансляції в {cid}: {e}")
+
+            if sent_count > 0:
+                await update.message.reply_text(f"✅ <b>Повідомлення анонімно відправлено в {sent_count} чат(ів)!</b>", parse_mode='HTML')
+            return
+
     if update.message.from_user and update.effective_chat:
         chat_id = update.effective_chat.id
         user = update.message.from_user
@@ -364,6 +400,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         recent_history = get_recent_chat_messages(update.effective_chat.id, limit=15)
 
         reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
+        if reply_text:
+            await send_safe_html_reply(update, reply_text)
+            return
+
+    # 4. Автономна реакція Бугайчика на досягнення (права, універ, бюджет, робота, диплом)
+    achievement_pattern = r'\b(здав|здала|здав\(ла\))\s+на\s+права|\b(вступив|вступила)\s+(в|до|на)|\b(захистив|захистила)\s+диплом|\b(знайшов|знайшла)\s+роботу|\b(купив|купила)\s+(машину|авто|тачку)\b'
+    if re.search(achievement_pattern, msg_content, re.IGNORECASE):
+        from utils.helpers import send_safe_html_reply, resolve_clean_user_name
+        from utils.bugaichyk_ai import get_bugaichyk_chat_reply
+        from storage.analytics_db import get_recent_chat_messages
+
+        sender_name = resolve_clean_user_name(update.message.from_user)
+        recent_history = get_recent_chat_messages(update.effective_chat.id, limit=10)
+
+        congrats_prompt = f"Користувач {sender_name} поділився радісною новиною/досягненням у чаті: '{msg_content}'. Напиши гучну, дотепну, харизматичну вітальну репліку від Бугайчика (1-2 речення) з бойківською часткою 'ся' та підйобом по його/її лору!"
+        reply_text = await get_bugaichyk_chat_reply(sender_name, congrats_prompt, recent_history)
         if reply_text:
             await send_safe_html_reply(update, reply_text)
             return

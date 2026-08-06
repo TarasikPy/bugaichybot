@@ -46,13 +46,7 @@ RISK_EVENTS = [
     "🥨 *Лук'ян прислав тобі листівку з Берліна* з підписом 'Пояснюю за базу!'."
 ]
 
-MODELS_TO_TRY = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash-8b"
-]
+MODELS_TO_TRY = ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"]
 
 def _clean_truncated_text(text: str) -> str:
     """Гарантує, що текст не обрізано на півслові/півреченні"""
@@ -61,10 +55,12 @@ def _clean_truncated_text(text: str) -> str:
 
     text = text.strip()
 
+    # Якщо текст закінчується на розділовий знак або зірочку/дужку — все ок
     valid_endings = ('.', '!', '?', '*', '"', '»', '…', '🛑', '✨', '🔥', '👑', '💖', ')', ']', '}')
     if text.endswith(valid_endings):
         return text
 
+    # Якщо речення перервалося, шукаємо останній закінчений розділовий знак
     last_punct = max(
         text.rfind('.'),
         text.rfind('!'),
@@ -75,53 +71,62 @@ def _clean_truncated_text(text: str) -> str:
     )
 
     if last_punct > 15:
+        # Обрізаємо по останій крапці/знаку
         return text[:last_punct + 1].strip()
     else:
+        # Якщо знака не було, додаємо трикрапку
         return text + "..."
 
 async def call_gemini_api(system_instruction: str, user_prompt: str) -> str:
-    """Викликає Google Gemini API з миттєвим автоперемиканням моделей та підтримкою ротації"""
+    """Викликає Google Gemini API з розширеним ротейшеном моделей та обробкою 429"""
     if not GEMINI_API_KEY:
         return ""
 
     payload = {
-        "system_instruction": {
-            "parts": [{"text": system_instruction}]
-        },
         "contents": [
             {
                 "role": "user",
-                "parts": [{"text": user_prompt}]
+                "parts": [{"text": f"{system_instruction}\n\nВАЖЛИВО: Будь 100% оригінальним, відповідай колоритною українською мовою Бойка з Карпат з часткою 'ся'! Відповідай ПРЯМО ТА ТОЧНО НА ПИТАННЯ ВИТОНЧЕНО ТА З ПІДЙОБАМИ!\nНЕ починай кожне повідомлення з вигуку 'Ба як!'! Уникай повторів!\n\nЗАВДАННЯ: {user_prompt}"}]
             }
         ],
         "generationConfig": {
             "temperature": 0.85,
-            "maxOutputTokens": 350
+            "maxOutputTokens": 800
         }
     }
 
-    async with httpx.AsyncClient(timeout=4.0) as client:
-        for model_name in MODELS_TO_TRY:
+    models_to_try = [
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest",
+        "gemini-pro-latest"
+    ]
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for model_name in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
-            try:
-                resp = await client.post(url, json=payload)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        content = candidates[0].get("content", {})
-                        parts = content.get("parts", [])
-                        text_parts = [
-                            p.get("text", "")
-                            for p in parts
-                            if p.get("text") and not p.get("thought", False)
-                        ]
-                        full_text = " ".join(text_parts).strip()
-                        if full_text:
-                            return _clean_truncated_text(full_text)
-            except Exception as e:
-                logger.debug(f"Gemini API model {model_name} error: {e}")
-                continue
+            for attempt in range(2):
+                try:
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        candidates = data.get("candidates", [])
+                        if candidates:
+                            content = candidates[0].get("content", {})
+                            parts = content.get("parts", [])
+                            text_parts = [
+                                p.get("text", "")
+                                for p in parts
+                                if p.get("text") and not p.get("thought", False)
+                            ]
+                            full_text = " ".join(text_parts).strip()
+                            if full_text:
+                                return _clean_truncated_text(full_text)
+                    elif resp.status_code == 429:
+                        await asyncio.sleep(1.2)
+                        continue
+                except Exception as e:
+                    logger.debug(f"Gemini API model {model_name} error: {e}")
+                    break
     return ""
 
 async def get_bugaichyk_roast(target_name: str, target_lore: str = "") -> str:
@@ -188,36 +193,51 @@ async def get_bugaichyk_news_commentary(news_text: str) -> str:
     if ai_resp:
         return format_ai_response_to_html(ai_resp)
 
-    fallback_reactions = [
-        "🍿 Почитав це... Наш чат у порівнянні з цими новинами — це ще інститут благородних дівчат.",
-        "Ехх, знову якісь двіжухи в новинах. **Ангеліна** певно вже готує кнопку бану для авторів цього вкиду!",
-        "Ого, оце так новина! **Маргарита** зараз розбере цей вкид на інженерні гвинтики та сопла.",
-        "Оце так поворот! **Адріана** вже поставила цій новині діагноз 'хронічний недосип'."
-    ]
-    return format_ai_response_to_html(random.choice(fallback_reactions))
+    # Розумний динамічний фолбек за темою пересланого тексту
+    text_lower = news_text.lower()
+    if any(k in text_lower for k in ['війна', 'фронт', 'зброя', 'ракета', 'дрон', 'бавовна', 'удар', 'армія']):
+        res = "<i>*спльокнув через зуби та затягнувся густим вейпом*</i>\n\n<b>Оце так бавовна в новинах!</b> Поки **Маргарита** розбирає техніку на гвинтики, а **Влад** качає підвальну масу, вороги нехай вчать бойківський діалект! 💣"
+    elif any(k in text_lower for k in ['політика', 'закон', 'сша', 'європа', 'побуд', 'дипломат', 'президент', 'рада']):
+        res = "<i>*припідняв капелюха та переглянув папери*</i>\n\n<b>Ба як, політичні двіжухи!</b> **Ангеліна** вже певно готує ноту протесту, а **Лук'ян** пояснює європейцям за справжню карпатську базу 📜!"
+    elif any(k in text_lower for k in ['медицина', 'лікар', 'вірус', 'хвороба', 'здоров', 'аптека', 'біо']):
+        res = "<i>*відставив чашку та покрутив головою*</i>\n\n<b>Ого, медичні новини!</b> **Адріана** вже готує дедлайни 24/7, а **Марія** шукає нові експерименти для своєї біології 🩺!"
+    elif any(k in text_lower for k in ['it', 'код', 'програм', 'айті', 'гаджет', 'техно', 'python']):
+        res = "<i>*поправив бойківського пояса і подивився на екран*</i>\n\n<b>Айтішні новини підвалили!</b> **Сергій Прокопчук** вже готує філософську душноту, а **Тарас** розгортає сервери на базі Python 💻!"
+    else:
+        res = "<i>*хрумкнув пальцями і перечитав переслане*</i>\n\n<b>Оце так новина в чаті!</b> Поки всі обговорюють цей вкид, наша база тримається міцно, а хастл не зупиняється ні на хвилину ☕!"
+
+    return format_ai_response_to_html(res)
 
 async def get_bugaichyk_judge(argument_text: str, user1: str, user2: str, recent_history: str = "") -> str:
     """Генерує вердикт ШІ-Судді для срачів з прямою відповіддю та аналізом історії повідомлень"""
     from utils.helpers import format_ai_response_to_html
 
-    history_block = f"\nІСТОРІЯ ОСТАННІХ ПОВІДОМЛЕНЬ У ЧАТІ:\n---\n{recent_history}\n---\n" if recent_history else ""
+    # Фільтруємо будь-які секретні команди з історії перед передачею в ШІ!
+    clean_history = ""
+    if recent_history:
+        lines = recent_history.splitlines()
+        clean_lines = [
+            l for l in lines
+            if not any(cmd in l.lower() for cmd in ['!пиши', '/say', '/пиши'])
+        ]
+        clean_history = "\n".join(clean_lines)
+
+    history_block = f"\nІСТОРІЯ ОСТАННІХ ПОВІДОМЛЕНЬ У ЧАТІ:\n---\n{clean_history}\n---\n" if clean_history else ""
 
     prompt = f"""Ти — Бугайчик, зухвалий, суворий проукраїнський суддя чату.
 Учасники суперечки: **{user1}** та **{user2}**.
 Тема/Аргумент: '{argument_text}'.
 {history_block}
 КАТЕГОРИЧНІ ТА АБСОЛЮТНІ ПРАВИЛА:
-1. **КАТЕГОРИЧНО ЗАБОРОНЕНО СЛОВА "Суперник", "Опонент", "Суперника", "Опонента" ТА ЮЗЕРНЕЙМИ З СОБАЧКОЮ (@linali_0, @sp_mangment)!** Завжди вживай ТІЛЬКИ СВІТЛІ СПРАВЖНІ ІМЕНА: **{user1}** та **{user2}**! НІЯКИХ СИРУВАТИХ ТЕГІВ У ТЕКСТІ!
-2. **ПРЯМА ВІДПОВІДЬ НА СУТЬ СПОРУ СИТУАТИВНО**:
-   - Якщо питання/суперечка торкається Криму — ПЕРШИМ ЖЕ РЕЧЕННЯМ голосно проголоси: **"КРИМ — ЦЕ БЕЗПЕРЕЧНО УКРАЇНА! КРАПКА!"**
-   - Прочитай історію чату вище (якщо є) та процитуй конкретні репліки **{user1}** та **{user2}**, пояснюючи ХТО ЩО сказав і хто правий!
-   - КАТЕГОРИЧНО ЗАБОРОНЕНО писати розмиту воду типу "в самій базі закладено питання з душком"! Відповідай ПРЯМО, ЖОРСТКО ТА З ЦИТАТАМИ!
-
-3. **ФОРМАТ ПЕРЕМОЖЦЯ ТА ЛУЗЕРА**:
+1. **КАТЕГОРИЧНО ЗАБОРОНЕНО СЛОВА "Суперник", "Опонент", "Суперника", "Опонента" ТА ЮЗЕРНЕЙМИ З СОБАЧКОЮ!** Завжди вживай ТІЛЬКИ СВІТЛІ СПРАВЖНІ ІМЕНА: **{user1}** та **{user2}**!
+2. **АНОНІМНІСТЬ ТА СЕКРЕТНІСТЬ**: КАТЕГОРИЧНО ТА АБСОЛЮТНО ЗАБОРОНЕНО згадувати будь-які секретні команди ('!пиши', '/say', '/пиши') або що хтось замовляв повідомлення через бота! Суди ТІЛЬКИ публічну суперечку про '{argument_text}'!
+3. **ПРЯМА ВІДПОВІДЬ НА СУТЬ СПОРУ**:
+   - Якщо суперечка торкається Криму — ПЕРШИМ ЖЕ РЕЧЕННЯМ голосно проголоси: **"КРИМ — ЦЕ БЕЗПЕРЕЧНО УКРАЇНА! КРАПКА!"**
+   - Прочитай історію чату вище та процитуй конкретні репліки **{user1}** та **{user2}**, пояснюючи ХТО ЩО сказав і хто правий!
+4. **ФОРМАТ ПЕРЕМОЖЦЯ ТА ЛУЗЕРА**:
    - 🏆 **Переможець срачу:** **{user1} ПЕРЕМІГ!** (*за що саме*)
    - 🤡 **Лузер / Крінжовик:** **{user2} ПРОГРАВ!** (*за що саме піймав крінж*)
-
-4. **РП-ПОКАРАННЯ**: Признач конкретне смішне РП-покарання для **{user2}**.
+5. **РП-ПОКАРАННЯ**: Признач конкретне смішне РП-покарання для **{user2}**.
 
 Формат вердикту:
 ⚖️ **СУД БУГАЙЧИКА ВИНИС ВЕРДИКТ!**
@@ -295,28 +315,53 @@ async def get_bugaichyk_chat_reply(user_name: str, message_text: str, recent_his
 
     history_block = f"\nІСТОРІЯ ПОВІДОМЛЕНЬ У ЧАТІ:\n---\n{recent_history}\n---\n" if recent_history else ""
 
-    prompt = f"""Ти — Бугайчик, зухвалий, саркастичний та колоритний карпатський газда.
+    prompt = f"""Ти — Бугайчик, зухвалий, саркастичний та колоритний карпатський Бойко-газда.
 
-Користувач **{user_name}** звернувся до тебе з повідомленням: '{message_text}'.
+Користувач {user_name} звернувся до тебе з повідомленням: '{message_text}'.
 {history_block}
 КАТЕГОРИЧНІ ПРАВИЛА ВІДПОВІДІ:
-1. Відповідай ПРЯМО НА ПИТАННЯ з дотепним бойківським колоритом та часткою `ся` (що ся стало, як ся маєш)! НЕ 'сі', тільки 'ся'!
-2. ЛОР ТА ПРОКЛЬОНИ — ТІЛЬКИ ДО РЕЧІ: Не спам про Польщу/мівіну/шляк трафив у кожній репліці! Згадуй лор або фразу "шляк трафив" рідко і влучно, якщо це личить питанню.
-3. З дівчатами (Ангеліна, Вероніка, Марія, Адріана) — розумний, галантний, зроби тонкий дотепний комплімент (*припідняв капелюха*). З хлопцями — різкий, влучний газда.
-4. КРАСИВЕ ФОРМАТУВАННЯ:
-   - Завжди відокремлюй РП-дію (*хрумкнув пальцями*, *припідняв кепку*) ПОРОЖНІМ РЯДКОМ від тексту відповіді!
-   - Постав 1 влучний смайлик у текст (наприклад ☕, 🪵, ⚡, 🍺, 📜).
-5. НІЯКИХ сирих юзернеймів з собачкою!
+1. СТРУКТУРА ПОВІДОМЛЕННЯ:
+   - Якщо є РП-дія (~40-50% шанс), запиши її в зірочках на першому рядку: *сплюнув шелуху від насіння*
+   - ПІСЛЯ РП-ДІЇ СТАВ ПОРОЖНІЙ РЯДОК (\n\n)! Ніколи не зліплюй дію і розмову в один рядок!
+   - Розмову починай з нового рядка чистим текстом!
+2. Вживай влучний український матюк (курва, нахуй, бл*ть, зашквар) ТА частку `ся`!
+3. Можеш додати 1 доречний смайлик (наприклад ☕, 🪵, ⚡, 🍺, 📜, 💣) інколи!
+4. НІЯКИХ сирих юзернеймів з собачкою чи слів 'ШІ'!
 
 Дай відповідь у 1-3 реченнях!"""
 
-    system = get_bugaichyk_prompt_for_user()
+    system = get_bugaichyk_prompt_for_user(user_name)
     ai_resp = await call_gemini_api(system, prompt)
     if ai_resp:
         return format_ai_response_to_html(ai_resp)
 
-    return format_ai_response_to_html(
-        f"<i>*сперся об одвірок і пильно подивився на {user_name}*</i>\n"
-        f"Шо ти там, **{user_name}**? Якщо питаєш Бугайчика — то слухай сюди: база закладена, мівіна заварена, а Крим — це Україна! Крапка!"
-    )
+    # Розумний динамічний фолбек, якщо API тимчасово на ліміті
+    msg_lower = message_text.lower()
+    if any(k in msg_lower for k in ['хто крутіш', 'хто кращ', 'хто кого', 'хто сильніш', 'я чи']):
+        other_name = 'опонент'
+        if 'андрій' in msg_lower or 'тромб' in msg_lower:
+            other_name = 'Андрій Тромб'
+        elif 'арма' in msg_lower:
+            other_name = 'Арма'
+        elif 'влад' in msg_lower:
+            other_name = 'Влад'
+        elif 'сергій' in msg_lower:
+            other_name = 'Сергій'
+
+        res = (
+            f"<i>*поправив бойківського пояса і розреготався на увесь чат*</i>\n\n"
+            f"<b>Та які тобі змагання, {user_name}!</b> Ти ниська зі своїм хастлом розриваєш чат, а {other_name} тільки й встигає масу на пельменях збирати! Обидва гарні, але ти ниська явно перченіший! ⚡"
+        )
+    elif any(k in msg_lower for k in ['як справи', 'шо ся маєш', 'як ся маєш', 'що робиш', 'шо робиш']):
+        res = (
+            f"<i>*затягнувся вейпом та припідняв капелюха*</i>\n\n"
+            f"<b>Як ся маєш, {user_name}?</b> Робота кипить, гори стоять, а наша карпатська база тримається міцно! Тільки спокій та тотальна імба! ☕"
+        )
+    else:
+        res = (
+            f"<i>*хрумкнув пальцями і пильно глянув на {user_name}*</i>\n\n"
+            f"<b>Ба як, {user_name}!</b> Ти питаєш за діло, тож слухай сюди: ниська все ся робить по факу, а хто сі сумніває — бодай би його шляк трафив! 🪵"
+        )
+
+    return format_ai_response_to_html(res)
 

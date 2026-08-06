@@ -13,3 +13,5 @@ if not BOT_TOKEN:
 
 if ':' not in BOT_TOKEN or len(BOT_TOKEN.split(':')) != 2:
     raise ValueError("Неправильний формат BOT_TOKEN! Токен повинен мати формат: ЧИСЛА:ЛІТЕРИ")
+
+DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID", "-1004397346715")

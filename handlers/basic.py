@@ -4,62 +4,71 @@ from telegram.ext import ContextTypes
 from utils.helpers import create_user_link
 
 HELP_TEXT = (
-    "📋 <b>Список усіх команд бота:</b>\n\n"
-    "📊 <b>Статистика та Профіль:</b>\n"
-    "• /chatstats (або <code>!стата</code>) — Аналітика активності чату (топ за сьогодні)\n"
-    "• /profile (або <code>!профіль [@user]</code>) — Особистий профіль користувача\n"
-    "• /id (або <code>!ід [@user]</code>) — Інформація, Telegram ID, роль та стосунки\n\n"
-    "🔥 <b>Ігрові механіки Бугайчика:</b>\n"
-    "• /roast (або <code>!прожарка</code>) — Зухвалий підкол/прожарка для юзера\n"
-    "• /judge (або <code>!суд</code>) — ШІ-Суддя для срачів (визначає Переможця та Душнілу)\n"
-    "• /quote (або <code>!цитата</code>) — Золотий фонд чату (мудрість дня)\n"
-    "• /risk (або <code>!ризик</code>) — РП-Рулетка випадкових подій з ЛОРу\n\n"
-    "🎭 <b>РП-Дії:</b>\n"
-    "• <code>!вдарив [хтось]</code> або <code>!вєбав</code> (у відповідь) — Вдарити користувача\n"
-    "• <code>!збив</code> / <code>!обняв</code> — Інші РП-дії (з підтримкою reply та @mentions)\n\n"
-    "❤️ <b>Стосунки:</b>\n"
-    "• /dating (або <code>!пропозиція</code>) — Запропонувати зустрічатися (потребує згоди)\n"
-    "• /relationships (або <code>!стосунки</code>) — Список усіх активних пар чату\n"
-    "• /myrelationships (або <code>!моїстосунки</code>) — Інформація про власну пару\n"
-    "• /breakup (або <code>!розрив</code>) — Розірвати стосунки / розлучитися\n\n"
-    "💕 <b>Взаємодія у парах (+очки):</b>\n"
-    "• /kiss — Поцілувати (+3 очки)\n"
-    "• /hug — Обійняти (+2 очки)\n"
-    "• /love — Заявити про кохання (+4 очки)\n"
-    "• /date — Піти на побачення (+5 очок)\n"
-    "• /gift — Подарувати подарунок (+3 очки)\n\n"
-    "🪙 <b>Розваги та Інфо:</b>\n"
-    "• /weather (або <code>!погода [місто]</code>) — Погода з саркастичним коментарем Бугайчика\n"
-    "• /flipcoin — Кинути монетку (Орел/Решка)"
+    "📋 <b>ОФІЦІЙНА ДОВІДКА КОМАНД БУГАЙЧИКА</b> 🌾\n\n"
+    "📊 <b>Аналітика та Профілі:</b>\n"
+    "• /chatstats (або <code>!стата</code>) — Топ активності чату за сьогодні\n"
+    "• /profile (або <code>!профіль [@user]</code>) — Особиста картка користувача\n"
+    "• /id (або <code>!інфо [@user]</code>) — Telegram ID, роль та пара у чаті\n\n"
+    "🔥 <b>Розваги та Суд Бугайчика:</b>\n"
+    "• /roast (або <code>!прожарка [@user]</code>) — Саркастичний підкол по лору\n"
+    "• /judge (або <code>!суд</code>) — Суд Бугайчика для вирішення срачів\n"
+    "• /quote (або <code>!цитата</code>) — Золотий фонд мудрості чату\n"
+    "• /risk (або <code>!ризик</code>) — РП-Рулетка подій та випробувань\n\n"
+    "❤️ <b>Стосунки та Парні дії:</b>\n"
+    "• /dating (або <code>!пропозиція</code>) — Запропонувати зустрічатися\n"
+    "• /relationships (або <code>!стосунки</code>) — Список усіх пар чату\n"
+    "• /myrelationships — Інформація про власні стосунки\n"
+    "• /breakup (або <code>!розрив</code>) — Розірвати стосунки\n"
+    "• <code>/kiss</code>, <code>/hug</code>, <code>/love</code>, <code>/date</code>, <code>/gift</code> — Прокачка очок у парі\n\n"
+    "🎭 <b>РП-Дії (з підтримкою reply / mentions):</b>\n"
+    "• <code>!вдарив</code>, <code>!збив</code>, <code>!обняв</code>, <code>!поцілував</code> — ЖИВІ РП-реакції\n\n"
+    "🌦️ <b>Погода та Розваги:</b>\n"
+    "• /weather (або <code>!погода [місто]</code>) — Прогноз погоди від Бугайчика\n"
+    "• /flipcoin — Кинути монетку (Орел чи Решка)"
 )
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє команду /start"""
-    user = update.message.from_user if update.message else None
-    user_link = create_user_link(user.id, user.first_name) if user else "користувачу"
-
+def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Генерує красиву інтерактивну клавіатуру для головного меню"""
     keyboard = [
-        [InlineKeyboardButton("📖 Довідка команд", callback_data='instructions')],
-        [InlineKeyboardButton("❤️ Стосунки", callback_data='about_relationships')],
-        [InlineKeyboardButton("📊 Статистика", callback_data='chat_stats_cb')]
+        [
+            InlineKeyboardButton("📜 Список команд", callback_data='menu_commands'),
+            InlineKeyboardButton("❤️ Стосунки", callback_data='menu_relationships')
+        ],
+        [
+            InlineKeyboardButton("📜 Мудрість дня", callback_data='menu_quote'),
+            InlineKeyboardButton("📊 Статистика", callback_data='menu_stats')
+        ],
+        [
+            InlineKeyboardButton("ℹ️ Про Бугайчика", callback_data='menu_about')
+        ]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup(keyboard)
+
+def get_back_keyboard() -> InlineKeyboardMarkup:
+    """Повертає кнопку 'Назад у Головне Меню'"""
+    keyboard = [[InlineKeyboardButton("« ⬅️ Назад у Меню", callback_data='menu_main')]]
+    return InlineKeyboardMarkup(keyboard)
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обробляє команду /start з інтерактивним меню"""
+    user = update.message.from_user if update.message else None
+    user_link = create_user_link(user.id, user.first_name) if user else "газдо"
 
     welcome_text = (
-        f"🎭 <b>Привіт, {user_link}! Я бот для інтерактивних РП-дій та системи стосунків!</b>\n\n"
-        f"{HELP_TEXT}\n\n"
-        "Обери потрібну опцію з меню нижче! 👇"
+        f"🌲 <b>Дай Боже, {user_link}!</b>\n\n"
+        "Я — Бугайчик, справжній карпатський газда, господар цього чату та твій давній колєга з гір! ☕\n\n"
+        "Обирай потрібний розділ у меню нижче! 👇"
     )
 
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='HTML')
+    await update.message.reply_text(welcome_text, reply_markup=get_main_menu_keyboard(), parse_mode='HTML')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обробляє команду /help"""
-    await update.message.reply_text(HELP_TEXT, parse_mode='HTML')
+    await update.message.reply_text(HELP_TEXT, reply_markup=get_back_keyboard(), parse_mode='HTML')
 
 async def commands_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показує красивий структурований список всіх команд"""
-    await update.message.reply_text(HELP_TEXT, parse_mode='HTML')
+    await update.message.reply_text(HELP_TEXT, reply_markup=get_back_keyboard(), parse_mode='HTML')
 
 async def flipcoin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда для кидання монети"""
@@ -67,15 +76,27 @@ async def flipcoin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await update.message.reply_text(f"🎲 Результат: <b>{result}</b>", parse_mode='HTML')
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє натискання інлайн кнопок у головному меню"""
+    """Обробляє натискання інлайн кнопок інтерактивного меню"""
     query = update.callback_query
     await query.answer()
 
-    if query.data == 'instructions':
-        text = HELP_TEXT
-    elif query.data == 'about_relationships':
+    data = query.data
+
+    if data == 'menu_main':
+        user = query.from_user
+        user_link = create_user_link(user.id, user.first_name) if user else "газдо"
         text = (
-            "❤️ <b>Система стосунків:</b>\n\n"
+            f"🌲 <b>Головне Меню Бугайчика:</b>\n\n"
+            f"Дай Боже, {user_link}! Обирай потрібну опцію з меню нижче! 👇"
+        )
+        await query.edit_message_text(text=text, reply_markup=get_main_menu_keyboard(), parse_mode='HTML')
+
+    elif data == 'menu_commands':
+        await query.edit_message_text(text=HELP_TEXT, reply_markup=get_back_keyboard(), parse_mode='HTML')
+
+    elif data == 'menu_relationships':
+        text = (
+            "❤️ <b>СИСТЕМА СТОСУНКІВ ТА РІВНІ КОХАННЯ:</b>\n\n"
             "1. 👋 Знайомство (0 очок)\n"
             "2. 😊 Симпатія (10 очок)\n"
             "3. 💕 Романтичні почуття (25 очок)\n"
@@ -85,11 +106,30 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "7. 💝 Душевна єдність (150 очок)\n"
             "8. 💞 Вічне кохання (200 очок)\n"
             "9. 💫 Божественне кохання (250 очок)\n"
-            "10. ✨ Абсолютна єдність (300 очок)"
+            "10. ✨ Абсолютна єдність (300 очок)\n\n"
+            "💡 <b>Як підняти рівень?</b> Використовуй команди: <code>/kiss</code> (+3), <code>/hug</code> (+2), <code>/love</code> (+4), <code>/date</code> (+5), <code>/gift</code> (+3)."
         )
-    elif query.data == 'chat_stats_cb':
-        text = "📊 Для перегляду статистики використовуйте команду /chatstats або <code>!стата</code> у чаті."
-    else:
-        text = "Опція вибрана."
+        await query.edit_message_text(text=text, reply_markup=get_back_keyboard(), parse_mode='HTML')
 
-    await query.edit_message_text(text=text, parse_mode='HTML')
+    elif data == 'menu_stats':
+        text = (
+            "📊 <b>СТАТИСТИКА ЧАТУ:</b>\n\n"
+            "Щоб переглянути живий рейтинг дописувачів за сьогодні, надішли у чат команду:\n"
+            "👉 <code>/chatstats</code> або <code>!стата</code>"
+        )
+        await query.edit_message_text(text=text, reply_markup=get_back_keyboard(), parse_mode='HTML')
+
+    elif data == 'menu_quote':
+        from utils.bugaichyk_ai import get_random_quote
+        quote_text = await get_random_quote()
+        await query.edit_message_text(text=quote_text, reply_markup=get_back_keyboard(), parse_mode='HTML')
+
+    elif data == 'menu_about':
+        text = (
+            "🌲 <b>ПРО БУГАЙЧИКА (Карпатський Газда):</b>\n\n"
+            "Дай Боже! Я — Бугайчик, колоритний Бойко з Карпат, ваш давній колєга та господар цього чату. "
+            "Я завжди радий розрулити будь-яку суперечку, видати сувору карпатську мудрість, "
+            "підтримати бесіду та простежити за залізобетонним порядком у чаті!\n\n"
+            "⚡ <i>На варті нашої спільної бази 24/7!</i>"
+        )
+        await query.edit_message_text(text=text, reply_markup=get_back_keyboard(), parse_mode='HTML')

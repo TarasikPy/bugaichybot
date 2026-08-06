@@ -201,11 +201,11 @@ async def send_safe_html_reply(update, text: str) -> None:
         await update.message.reply_text(plain_text)
 
 def format_ai_response_to_html(text: str) -> str:
-    """Перетворює Markdown від ШІ на валідний HTML для Telegram без подвійного екранування <b>, <i>, <code>, <a>"""
+    """Перетворює Markdown від ШІ на красивий HTML для Telegram: <i>*дія*</i> на першому рядку, далі відступ \n\n і текст"""
     if not text:
         return ""
 
-    s = str(text)
+    s = str(text).strip()
 
     # 1. Захищаємо вже наявні дійсні HTML теги Telegram
     tags = []
@@ -216,14 +216,19 @@ def format_ai_response_to_html(text: str) -> str:
     valid_pattern = r'</?(?:b|i|u|s|code|pre|blockquote)(?:\s+[^>]*)?>|<a\s+href="[^"]*">'
     s = re.sub(valid_pattern, save_tag, s, flags=re.IGNORECASE)
 
-    # 2. Конвертуємо Markdown **жирний** та *курсив*
+    # 2. Конвертуємо Markdown **жирний** в <b>
     s = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', s)
+
+    # 3. Конвертуємо *РП-дію* на <i>*РП-дія*</i>
     s = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>*\1*</i>', s)
 
-    # 3. Екрануємо залишки небезпечних знаків <, >, &
+    # 4. Якщо на початку є РП-дія (<i>*...*</i>), переконуємося, що після неї йде ПОРОЖНІЙ РЯДОК (\n\n)
+    s = re.sub(r'^(<i>\*[^*]+\*</i>)\s*\n*', r'\1\n\n', s)
+
+    # 5. Екрануємо небезпечні спецсимволи <, >, &
     s = html.escape(s, quote=False)
 
-    # 4. Відновлюємо валідні теги Telegram
+    # 6. Відновлюємо валідні теги Telegram
     for i, tag in enumerate(tags):
         ph_esc = html.escape(f'__TAG_{i}__', quote=False)
         s = s.replace(ph_esc, tag).replace(f'__TAG_{i}__', tag)
@@ -231,7 +236,7 @@ def format_ai_response_to_html(text: str) -> str:
     s = s.replace('&lt;b&gt;', '<b>').replace('&lt;/b&gt;', '</b>')
     s = s.replace('&lt;i&gt;', '<i>').replace('&lt;/i&gt;', '</i>')
 
-    return s
+    return s.strip()
 
 async def resolve_target_user_info(update) -> tuple:
     """Універсальний резолвер цільового користувача (по reply, @username, id, text_mention, USERS_MAP, USERS_CACHE)"""

@@ -24,6 +24,10 @@ def add_chat_recent_message(chat_id: int, user_name: str, text: str) -> None:
     """Додає повідомлення у циклічний буфер останніх повідомлень чату (до 50 шт)"""
     if not text or not text.strip():
         return
+    text_lower = text.lower()
+    if any(cmd in text_lower for cmd in ['!пиши', '/say', '/пиши']):
+        return  # Секретні команди власника ніколи не потрапляють у буфер чату!
+
     now_str = datetime.now().strftime('%H:%M')
     msg_list = _chat_recent_messages.setdefault(chat_id, [])
     msg_list.append({
@@ -234,3 +238,43 @@ def get_history_summary() -> Dict[str, Any]:
         'top_emojis': history.get('top_emojis', []),
         'top_slang': history.get('top_slang', [])
     }
+
+def get_all_active_chat_ids() -> list:
+    """Повертає список усіх ID групових чатів, де бот є активним"""
+    chat_ids = set(_chat_recent_messages.keys())
+    try:
+        history = load_history_analytics()
+        for cid_str in history.get("chats", {}).keys():
+            try:
+                chat_ids.add(int(cid_str))
+            except ValueError:
+                pass
+    except Exception:
+        pass
+
+    group_chats = [cid for cid in chat_ids if cid < 0]
+    if not group_chats:
+        try:
+            from config.settings import DEFAULT_CHAT_ID
+            group_chats.append(int(DEFAULT_CHAT_ID))
+        except Exception:
+            group_chats.append(-1004397346715)
+    return group_chats
+
+def rescan_and_sync_analytics() -> Dict[str, int]:
+    """Сканує накопичений буфер останніх смс і підраховує активність користувачів"""
+    counts = {}
+    for cid, msg_list in _chat_recent_messages.items():
+        for m in msg_list:
+            name = m.get('name', 'Користувач')
+            counts[name] = counts.get(name, 0) + 1
+    return counts
+
+def purge_all_data() -> None:
+    """Повністю очищує тестову аналітику та стосунки перед деплоєм в продакшн"""
+    for fname in [LIVE_ANALYTICS_FILE, 'data/relationships.json', 'data/user_cache.json']:
+        if os.path.exists(fname):
+            try:
+                os.remove(fname)
+            except Exception:
+                pass
