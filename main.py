@@ -62,7 +62,12 @@ def start_health_check_server():
     server.serve_forever()
 
 async def setup_bot_commands(application: Application) -> None:
-    """Налаштовує меню команд бота"""
+    """Налаштовує меню команд бота та примусово скидає застарілі webhook сесії"""
+    try:
+        await application.bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        logger.warning(f"delete_webhook попередження: {e}")
+
     private_commands = [
         BotCommand("start", "Головне меню бота"),
         BotCommand("help", "Довідка"),
@@ -96,8 +101,8 @@ def main() -> None:
     health_thread = threading.Thread(target=start_health_check_server, daemon=True)
     health_thread.start()
 
-    # 2. Спроби запуску polling із захистом від 409 Conflict та перезапусків
-    for attempt in range(1, 10):
+    # 2. Нескінченний цикл запуску з авто-відновленням при 409 Conflict
+    while True:
         try:
             application = (
                 Application.builder()
@@ -144,21 +149,25 @@ def main() -> None:
             application.add_handler(MessageHandler(~filters.COMMAND, handle_message))
             application.add_handler(MessageHandler(filters.COMMAND, handle_message))
 
-            logger.info("🚀 Бот успішно запущений з підтвердженням стосунків та захистом від Render 409 Conflict...")
+            logger.info("🚀 Бот успішно запущений з захистом від Render 409 Conflict...")
 
             application.run_polling(
                 allowed_updates=Update.ALL_TYPES,
                 drop_pending_updates=True,
+                bootstrap_retries=-1,
                 timeout=30
             )
             break
 
-        except (Conflict, NetworkError) as e:
-            logger.warning(f"⚠️ Конфлікт або мережева затримка (Спроба {attempt}/10): {e}. Пауза 5 секунд...")
+        except Conflict as e:
+            logger.warning(f"⚠️ Telegram 409 Conflict (старий контейнер на Render ще зупиняється): {e}. Пауза 10 секунд...")
+            time.sleep(10)
+        except NetworkError as e:
+            logger.warning(f"⚠️ Мережева затримка: {e}. Пауза 5 секунд...")
             time.sleep(5)
         except Exception as e:
-            logger.error(f"❌ Критична помилка запуску бота: {e}")
-            break
+            logger.error(f"❌ Помилка роботи бота: {e}. Пауза 10 секунд...")
+            time.sleep(10)
 
 if __name__ == '__main__':
     main()
