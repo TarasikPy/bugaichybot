@@ -46,7 +46,13 @@ RISK_EVENTS = [
     "🥨 *Лук'ян прислав тобі листівку з Берліна* з підписом 'Пояснюю за базу!'."
 ]
 
-MODELS_TO_TRY = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+MODELS_TO_TRY = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-flash-latest",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash-8b"
+]
 
 def _clean_truncated_text(text: str) -> str:
     """Гарантує, що текст не обрізано на півслові/півреченні"""
@@ -55,12 +61,10 @@ def _clean_truncated_text(text: str) -> str:
 
     text = text.strip()
 
-    # Якщо текст закінчується на розділовий знак або зірочку/дужку — все ок
     valid_endings = ('.', '!', '?', '*', '"', '»', '…', '🛑', '✨', '🔥', '👑', '💖', ')', ']', '}')
     if text.endswith(valid_endings):
         return text
 
-    # Якщо речення перервалося, шукаємо останній закінчений розділовий знак
     last_punct = max(
         text.rfind('.'),
         text.rfind('!'),
@@ -71,67 +75,53 @@ def _clean_truncated_text(text: str) -> str:
     )
 
     if last_punct > 15:
-        # Обрізаємо по останій крапці/знаку
         return text[:last_punct + 1].strip()
     else:
-        # Якщо знака не було, додаємо трикрапку
         return text + "..."
 
 async def call_gemini_api(system_instruction: str, user_prompt: str) -> str:
-    """Викликає Google Gemini API з автоперемиканням моделей та підтримкою ротації"""
+    """Викликає Google Gemini API з миттєвим автоперемиканням моделей та підтримкою ротації"""
     if not GEMINI_API_KEY:
         return ""
 
-    base_payload = {
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": system_instruction}]
+        },
         "contents": [
             {
                 "role": "user",
-                "parts": [{"text": f"{system_instruction}\n\nВАЖЛИВО: Будь 100% оригінальним, вигадай НОВИЙ жарт і не повторюй минулі шаблони! Твоя відповідь ПОВИННА бути завершеною (2-3 повних речення).\n\nЗАВДАННЯ: {user_prompt}"}]
+                "parts": [{"text": user_prompt}]
             }
         ],
         "generationConfig": {
-            "temperature": 0.9,
-            "maxOutputTokens": 800,
-            "thinkingConfig": {
-                "thinkingBudget": 0
-            }
+            "temperature": 0.85,
+            "maxOutputTokens": 350
         }
     }
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=4.0) as client:
         for model_name in MODELS_TO_TRY:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
-            # Спробуємо з thinkingConfig, якщо 400 — спробуємо без нього
-            payloads = [
-                base_payload,
-                {
-                    "contents": base_payload["contents"],
-                    "generationConfig": {"temperature": 0.9, "maxOutputTokens": 800}
-                }
-            ]
-            for payload in payloads:
-                try:
-                    resp = await client.post(url, json=payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        candidates = data.get("candidates", [])
-                        if candidates:
-                            content = candidates[0].get("content", {})
-                            parts = content.get("parts", [])
-                            # Фільтруємо частини, залишаємо тільки фінальний текст (ігноруємо думки / thought: true)
-                            text_parts = [
-                                p.get("text", "")
-                                for p in parts
-                                if p.get("text") and not p.get("thought", False)
-                            ]
-                            full_text = " ".join(text_parts).strip()
-                            if full_text:
-                                return _clean_truncated_text(full_text)
-                    elif resp.status_code == 400:
-                        continue
-                except Exception as e:
-                    logger.debug(f"Gemini API model {model_name} error: {e}")
-                    break
+            try:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        content = candidates[0].get("content", {})
+                        parts = content.get("parts", [])
+                        text_parts = [
+                            p.get("text", "")
+                            for p in parts
+                            if p.get("text") and not p.get("thought", False)
+                        ]
+                        full_text = " ".join(text_parts).strip()
+                        if full_text:
+                            return _clean_truncated_text(full_text)
+            except Exception as e:
+                logger.debug(f"Gemini API model {model_name} error: {e}")
+                continue
     return ""
 
 async def get_bugaichyk_roast(target_name: str, target_lore: str = "") -> str:
