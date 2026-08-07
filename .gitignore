@@ -16,6 +16,7 @@ storage/analytics.db
 *.txt
 !requirements.txt
 !runtime.txt
+!ФУЛЛЛЛ.txt
 
 # Редактори та середовища
 .vscode/
