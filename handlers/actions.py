@@ -7,9 +7,32 @@ from telegram.ext import ContextTypes
 
 from config.names import USERS_MAP
 from config.levels import ALL_COUPLE_COMMANDS, VALID_COMMANDS
-from utils.helpers import decline_name, create_user_link, escape_html
+from utils.helpers import (
+    decline_name,
+    create_user_link,
+    escape_html,
+    send_safe_html_reply,
+    resolve_clean_user_name,
+    format_ai_response_to_html
+)
+from utils.bugaichyk_ai import (
+    get_bugaichyk_news_commentary,
+    get_bugaichyk_chat_reply
+)
+from storage.analytics_db import (
+    get_recent_chat_messages,
+    record_live_message,
+    rescan_and_sync_analytics,
+    get_all_active_chat_ids
+)
 from storage.user_cache import update_user_cache, get_user_info_by_username
 from storage.json_db import load_chat_relationships, save_chat_relationships
+from utils.video_downloader import download_and_send_video
+
+from handlers.relationships import relationships_command, my_relationships_command, breakup_command, handle_couple_command
+from handlers.analytics import chat_stats_command, profile_command
+from handlers.weather import weather_command
+from handlers.mechanics import roast_command, judge_command, quote_command, risk_command
 
 logger = logging.getLogger(__name__)
 
@@ -195,9 +218,6 @@ async def process_media_group_after_delay(media_group_id: str, delay: float = 1.
     update = group_data["update"]
     msg_content = group_data["text"].strip()
 
-    from utils.helpers import send_safe_html_reply
-    from utils.bugaichyk_ai import get_bugaichyk_news_commentary
-
     input_text = msg_content if msg_content else "[Користувач переслав медіа/файл/пост без тексту]"
     comment = await get_bugaichyk_news_commentary(input_text)
     if comment:
@@ -209,6 +229,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     # Оновлюємо кеш юзернейма та first_name при будь-якому повідомленні
+    sender_name = resolve_clean_user_name(update.message.from_user) if update.message.from_user else "Користувач"
     if update.message.from_user:
         user = update.message.from_user
         first_name = user.first_name or user.username or "Користувач"
@@ -224,7 +245,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if sender_id == 1318789006:
             # Таємна команда пересканування статистики для власника
             if re.match(r'^(?:!скан|/rescan|!синхрон)', msg_content, re.IGNORECASE):
-                from storage.analytics_db import rescan_and_sync_analytics
                 counts = rescan_and_sync_analytics()
                 info = "\n".join([f"• <b>{k}</b>: {v} смс" for k, v in counts.items()]) if counts else "Немає нових повідомлень."
                 await update.message.reply_text(f"📊 <b>Аналітику та статистику успішно проскановано й оновлено!</b>\n\n{info}", parse_mode='HTML')
@@ -236,9 +256,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 return  # Мовчки ігноруємо для всіх інших користувачів
 
             broadcast_text = say_match.group(1).strip()
-            from storage.analytics_db import get_all_active_chat_ids
-            from utils.helpers import format_ai_response_to_html
-
             formatted_text = format_ai_response_to_html(broadcast_text)
             target_chats = get_all_active_chat_ids()
             sent_count = 0
@@ -259,7 +276,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user = update.message.from_user
 
         try:
-            from storage.analytics_db import record_live_message
             await record_live_message(chat_id, user, msg_content)
 
             # Також оновлюємо сумісний daily_stats у relationships_chats
@@ -302,48 +318,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             # Перенаправлення аліасів до відповідних команд
             if command == 'relationships':
-                from handlers.relationships import relationships_command
                 await relationships_command(update, context)
                 return
             elif command == 'myrelationships':
-                from handlers.relationships import my_relationships_command
                 await my_relationships_command(update, context)
                 return
             elif command == 'chatstats':
-                from handlers.analytics import chat_stats_command
                 await chat_stats_command(update, context)
                 return
             elif command == 'profile':
-                from handlers.analytics import profile_command
                 await profile_command(update, context)
                 return
             elif command == 'breakup':
-                from handlers.relationships import breakup_command
                 await breakup_command(update, context)
                 return
             elif command == 'weather':
-                from handlers.weather import weather_command
                 await weather_command(update, context)
                 return
             elif command == 'roast':
-                from handlers.mechanics import roast_command
                 await roast_command(update, context)
                 return
             elif command == 'judge':
-                from handlers.mechanics import judge_command
                 await judge_command(update, context)
                 return
             elif command == 'quote':
-                from handlers.mechanics import quote_command
                 await quote_command(update, context)
                 return
             elif command == 'risk':
-                from handlers.mechanics import risk_command
                 await risk_command(update, context)
                 return
 
             if command in ALL_COUPLE_COMMANDS or command in ('dating', 'trio'):
-                from handlers.relationships import handle_couple_command
                 target = None
                 if '@' in msg_content:
                     target_match = re.search(r'@(\S+)', msg_content)
@@ -380,54 +385,64 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         asyncio.create_task(process_media_group_after_delay(media_group_id, delay=1.0))
         return
 
-    from utils.helpers import send_safe_html_reply
-    from utils.bugaichyk_ai import get_bugaichyk_news_commentary
-
-    if is_forward:
-        input_text = msg_content if msg_content else "[Користувач переслав медіа/файл/пост без тексту]"
-        comment = await get_bugaichyk_news_commentary(input_text)
-        if comment:
-            await send_safe_html_reply(update, comment)
-        return
-
-    # 3. Пряме звернення до бота за ім'ям (Бугайчик, Бугай, Бугі, Бугаич, Бугайчику, Бугаю, Бугімен...)
-    if re.search(r'\b(бугайчик|бугай|бугі|бугаич|бугайчику|бугаю|бугімен|бугайчище)\w*\b', msg_content, re.IGNORECASE):
-        from utils.helpers import send_safe_html_reply, resolve_clean_user_name
-        from utils.bugaichyk_ai import get_bugaichyk_chat_reply
-        from storage.analytics_db import get_recent_chat_messages
-
-        sender_name = resolve_clean_user_name(update.message.from_user)
-        recent_history = get_recent_chat_messages(update.effective_chat.id, limit=15)
-
-        reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
-        if reply_text:
-            await send_safe_html_reply(update, reply_text)
-            return
-
-    # 4. Автономна реакція Бугайчика на досягнення (права, універ, бюджет, робота, диплом)
-    achievement_pattern = r'\b(здав|здала|здав\(ла\))\s+на\s+права|\b(вступив|вступила)\s+(в|до|на)|\b(захистив|захистила)\s+диплом|\b(знайшов|знайшла)\s+роботу|\b(купив|купила)\s+(машину|авто|тачку)\b'
-    if re.search(achievement_pattern, msg_content, re.IGNORECASE):
-        from utils.helpers import send_safe_html_reply, resolve_clean_user_name
-        from utils.bugaichyk_ai import get_bugaichyk_chat_reply
-        from storage.analytics_db import get_recent_chat_messages
-
-        sender_name = resolve_clean_user_name(update.message.from_user)
-        recent_history = get_recent_chat_messages(update.effective_chat.id, limit=10)
-
-        congrats_prompt = f"Користувач {sender_name} поділився радісною новиною/досягненням у чаті: '{msg_content}'. Напиши гучну, дотепну, харизматичну вітальну репліку від Бугайчика (1-2 речення) з бойківською часткою 'ся' та підйобом по його/її лору!"
-        reply_text = await get_bugaichyk_chat_reply(sender_name, congrats_prompt, recent_history)
-        if reply_text:
-            await send_safe_html_reply(update, reply_text)
-            return
-
-    # Перевірка на посилання відео/тікток/shorts/reels — завантажуємо відео у чат!
+    # 1. Перевірка на посилання відео/тікток/shorts/reels — завантажуємо відео у чат (навіть якщо повідомлення переслане)!
     raw_urls = re.findall(r'https?://[^\s>"]+', msg_content, re.IGNORECASE)
     video_keywords = ['tiktok.com', 'instagram.com', 'instagr.am', 'youtube.com/shorts', 'youtu.be', 'x.com', 'twitter.com']
 
     for url in raw_urls:
         if any(kw in url.lower() for kw in video_keywords):
-            from utils.video_downloader import download_and_send_video
             await download_and_send_video(update, context, url)
+            return
+
+    # 2. Переслані новини/пости -> Коментар від Бугайчика
+    if is_forward:
+        input_text = msg_content if msg_content else "[Користувач переслав медіа/файл/пост без тексту]"
+        comment = await get_bugaichyk_news_commentary(input_text, sender_name, recent_history)
+        if comment:
+            await send_safe_html_reply(update, comment)
+        return
+
+    # Перевіряємо, чи це пряма відповідь (reply) на репліку Бугайчика
+    is_reply_to_bot = False
+    if update.message and update.message.reply_to_message and update.message.reply_to_message.from_user:
+        replied_user = update.message.reply_to_message.from_user
+        if replied_user.id == context.bot.id or replied_user.is_bot:
+            is_reply_to_bot = True
+
+    has_bot_keyword = bool(re.search(r'\b(бугайчик|бугай|бугі|бугаич|бугайчику|бугаю|бугімен|бугайчище)\w*\b', msg_content, re.IGNORECASE))
+
+    # 3. Пряме звернення до бота за ім'ям АБО відповідь (reply) на його повідомлення -> ЗАВЖДИ 100% ВІДПОВІДЬ!
+    if has_bot_keyword or is_reply_to_bot:
+        reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
+        if reply_text:
+            await send_safe_html_reply(update, reply_text)
+            return
+
+    # 3b. Обробка привітань (Слава Ісусу, Слава Йсу, Слава Україні, Привіт, Здоров...)
+    msg_lower = msg_content.lower().strip()
+    sender_link = create_user_link(update.message.from_user.id if update.message.from_user else None, sender_name)
+
+    if any(k in msg_lower for k in ['слава ісусу', 'слава йсу', 'слава ісусу христу', 'слава су']):
+        await send_safe_html_reply(update, "<i>*похрестився й шанобливо зняв капелюх*</i>\n\n<b>Слава навіки Богу! ✝️</b> Вітаю у нашому чаті, колєго!")
+        return
+
+    if 'слава україні' in msg_lower:
+        await send_safe_html_reply(update, "<i>*приклав руку до серця*</i>\n\n<b>Героям Слава! 🇺🇦</b> База тримається міцно!")
+        return
+
+    if any(k in msg_lower for k in ['привіт', 'здоров', 'добрий день', 'доброго дня', 'доброго ранку', 'добрий вечір', 'вітаю', 'здоровенькі були']):
+        reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
+        if reply_text:
+            await send_safe_html_reply(update, reply_text)
+            return
+
+    # 5. Автономна реакція Бугайчика на досягнення (права, універ, бюджет, робота, диплом)
+    achievement_pattern = r'\b(здав|здала|здав\(ла\))\s+на\s+права|\b(вступив|вступила)\s+(в|до|на)|\b(захистив|захистила)\s+диплом|\b(знайшов|знайшла)\s+роботу|\b(купив|купила)\s+(машину|авто|тачку)\b'
+    if re.search(achievement_pattern, msg_content, re.IGNORECASE):
+        congrats_prompt = f"Користувач {sender_name} поділився радісною новиною/досягненням у чаті: '{msg_content}'. Напиши гучну, дотепну, харизматичну вітальну репліку від Бугайчика (1-2 речення) з бойківською часткою 'ся' та підйобом по його/її лору!"
+        reply_text = await get_bugaichyk_chat_reply(sender_name, congrats_prompt, recent_history)
+        if reply_text:
+            await send_safe_html_reply(update, reply_text)
             return
 
     # Реакція на новинні слова у звичайних повідомленнях
@@ -441,7 +456,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     is_news_link_or_kw = any(kw in msg_content.lower() for kw in news_keywords)
 
     if is_news_link_or_kw and len(msg_content) > 10:
-        comment = await get_bugaichyk_news_commentary(msg_content)
+        comment = await get_bugaichyk_news_commentary(msg_content, sender_name, recent_history)
         if comment:
             await send_safe_html_reply(update, comment)
+            return
+
+    # 6. Загальна фонова відповідь бота на звичайні повідомлення чату (30% шанс долучитися)
+    if random.random() < 0.30:
+        reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
+        if reply_text:
+            await send_safe_html_reply(update, reply_text)
+            return
+        if reply_text:
+            await send_safe_html_reply(update, reply_text)
+            return
 

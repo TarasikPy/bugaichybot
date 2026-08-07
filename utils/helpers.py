@@ -1,10 +1,11 @@
 import re
 import html
 from datetime import datetime
-from config.names import MALE_NAMES_DECLENSION, FEMALE_NAMES_DECLENSION
-from config.levels import RELATIONSHIP_LEVELS
-
 import unicodedata
+from config.names import USERS_MAP, MALE_NAMES_DECLENSION, FEMALE_NAMES_DECLENSION
+from config.levels import RELATIONSHIP_LEVELS
+from storage.user_cache import get_user_name_by_id_sync, get_user_info_by_username
+from storage.analytics_db import load_history_analytics
 
 def escape_html(text: str) -> str:
     """Екранує спеціальні символи HTML (<, >, &)"""
@@ -12,10 +13,26 @@ def escape_html(text: str) -> str:
         return ""
     return html.escape(str(text))
 
+USER_ID_MAP = {
+    1318789006: "Кійотака",
+    1591084301: "Сергій Прокопчук",
+    1922420385: "ангелик",
+    1375996435: "Владислав Сидор",
+    1461200386: "Маргарита",
+    5730136104: "Андрій Тромб",
+    2045119679: "мяу",
+    2005833676: "Марія",
+    1286527597: "Адріанікс🎀",
+    7292577573: "Alina",
+    878744016: "Ярослав",
+    6266441947: "Марія Естонія"
+}
+
 def resolve_clean_user_name(user=None, raw_name: str = "") -> str:
     """Перетворює юзернейм або first_name з Юнікод-шрифтами у красиве українське ім'я з USERS_MAP"""
-    from config.names import USERS_MAP
     if user:
+        if getattr(user, 'id', None) in USER_ID_MAP:
+            return USER_ID_MAP[user.id]
         uname = (getattr(user, 'username', '') or '').lower()
         if uname in USERS_MAP:
             return USERS_MAP[uname]
@@ -51,7 +68,8 @@ def resolve_clean_user_name(user=None, raw_name: str = "") -> str:
 
 def resolve_user_name_by_id_or_name(user_id: int, current_name: str = "") -> str:
     """Знаходить справжнє ім'я користувача за його Telegram ID або кешем (усуває 'Користувач')"""
-    from storage.user_cache import get_user_name_by_id_sync
+    if user_id in USER_ID_MAP:
+        return USER_ID_MAP[user_id]
 
     cached_name = get_user_name_by_id_sync(user_id)
     if cached_name and cached_name not in ("Користувач", "Партнер 1", "Партнер 2"):
@@ -236,13 +254,29 @@ def format_ai_response_to_html(text: str) -> str:
     s = s.replace('&lt;b&gt;', '<b>').replace('&lt;/b&gt;', '</b>')
     s = s.replace('&lt;i&gt;', '<i>').replace('&lt;/i&gt;', '</i>')
 
+    # 7. ГАРАНТІЯ НАЯВНОСТІ ТЕКСТУ ПІСЛЯ РП-ДІЇ (Ніколи не залишати тільки дію у зірочках!)
+    plain_no_tags = re.sub(r'<[^>]*>', '', s)
+    plain_no_rp = re.sub(r'\*[^*]+\*', '', plain_no_tags).strip()
+
+    if len(plain_no_rp) < 4:
+        import random
+        rp_match = re.search(r'<i>\*(.*?)\*</i>', s) or re.search(r'\*(.*?)\*', s)
+        spoken_fallbacks = [
+            "Оце так новини у чаті! Наша база тримається міцно, а хастл розриває! ☕",
+            "Та від таких новин у самого Бугайчика капелюх злітає! А ми тримаємо базу! ⚡",
+            "Оце так вкид! Наші Карпати стоять непорушно, а ми працюємо далі! 🌾",
+            "Чуйно! Я на місці, наша база тримається міцно! 🌲"
+        ]
+        if rp_match:
+            rp_content = rp_match.group(1).strip()
+            s = f"<i>*{rp_content}*</i>\n\n<b>{random.choice(spoken_fallbacks)}</b>"
+        else:
+            s = "<b>Та тут я, колєго! Наша база тримається міцно! ☕</b>"
+
     return s.strip()
 
 async def resolve_target_user_info(update) -> tuple:
     """Універсальний резолвер цільового користувача (по reply, @username, id, text_mention, USERS_MAP, USERS_CACHE)"""
-    from config.names import USERS_MAP
-    from storage.user_cache import get_user_info_by_username
-
     if not update or not update.message:
         return None, "Користувач", ""
 
@@ -297,7 +331,6 @@ async def resolve_target_user_info(update) -> tuple:
 
         # 2e. Пошук в офлайн аналітиці (chat_analytics.json)
         if not target_user_id or not target_name:
-            from storage.analytics_db import load_history_analytics
             history_data = load_history_analytics()
             profiles = history_data.get('profiles', {})
 

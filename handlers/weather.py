@@ -3,6 +3,7 @@ import httpx
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.helpers import escape_html
+from utils.bugaichyk_ai import get_bugaichyk_weather_commentary
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,6 @@ async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             emoji, desc = WEATHER_CODES.get(weathercode, ("🌤", "Погода"))
             country_str = f" ({country})" if country else ""
 
-            from utils.bugaichyk_ai import get_bugaichyk_weather_commentary
             bugaichyk_comment = await get_bugaichyk_weather_commentary(city_name, temp, desc, feels_like)
 
             card_text = (

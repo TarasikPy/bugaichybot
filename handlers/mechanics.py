@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes
 
 from config.names import USERS_MAP
 from utils.helpers import create_user_link, escape_html, send_safe_html_reply, resolve_clean_user_name
-from storage.analytics_db import get_user_history_profile
+from storage.analytics_db import get_user_history_profile, get_recent_chat_messages
 from utils.bugaichyk_ai import (
     get_bugaichyk_roast,
     get_bugaichyk_judge,
@@ -40,8 +40,6 @@ async def roast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def judge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /judge або /суд — ШІ-Суддя для срачів з аналізом останніх 20+ повідомлень чату"""
-    from storage.analytics_db import get_recent_chat_messages
-
     if not update.message:
         return
 
@@ -125,10 +123,7 @@ async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     user_id = update.message.from_user.id
     success, quote_text = await check_and_get_quote(user_id)
 
-    if not success:
-        await send_safe_html_reply(update, f"⚠️ {quote_text}")
-    else:
-        await send_safe_html_reply(update, quote_text)
+    await send_safe_html_reply(update, quote_text)
 
 async def risk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /ризик або /risk — РП-Рулетка"""

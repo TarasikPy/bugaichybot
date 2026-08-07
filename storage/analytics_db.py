@@ -4,6 +4,7 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
+from config.settings import DEFAULT_CHAT_ID
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +256,6 @@ def get_all_active_chat_ids() -> list:
     group_chats = [cid for cid in chat_ids if cid < 0]
     if not group_chats:
         try:
-            from config.settings import DEFAULT_CHAT_ID
             group_chats.append(int(DEFAULT_CHAT_ID))
         except Exception:
             group_chats.append(-1004397346715)

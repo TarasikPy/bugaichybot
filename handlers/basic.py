@@ -2,6 +2,7 @@ import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.helpers import create_user_link
+from utils.bugaichyk_ai import get_random_quote, check_and_get_quote
 
 HELP_TEXT = (
     "📋 <b>ОФІЦІЙНА ДОВІДКА КОМАНД БУГАЙЧИКА</b> 🌾\n\n"
@@ -120,8 +121,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(text=text, reply_markup=get_back_keyboard(), parse_mode='HTML')
 
     elif data == 'menu_quote':
-        from utils.bugaichyk_ai import get_random_quote
-        quote_text = await get_random_quote()
+        user = query.from_user
+        _, quote_text = await check_and_get_quote(user.id if user else 0)
         await query.edit_message_text(text=quote_text, reply_markup=get_back_keyboard(), parse_mode='HTML')
 
     elif data == 'menu_about':

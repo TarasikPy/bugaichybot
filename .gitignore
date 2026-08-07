@@ -5,14 +5,17 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.log
 
-# Дані чатів
+# Дані чатів та локальні БД
 relationships_chats/
 wisdom_chats/
+storage/users_cache.json
+storage/analytics.db
 data/
-data/users_export/
-result.json
-*.json
+*.txt
+!requirements.txt
+!runtime.txt
 
 # Редактори та середовища
 .vscode/
