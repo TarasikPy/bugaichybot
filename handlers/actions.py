@@ -404,17 +404,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await send_safe_html_reply(update, comment)
         return
 
-    # Перевіряємо, чи це пряма відповідь (reply) на репліку Бугайчика
-    is_reply_to_bot = False
-    if update.message and update.message.reply_to_message and update.message.reply_to_message.from_user:
-        replied_user = update.message.reply_to_message.from_user
-        if replied_user.id == context.bot.id or replied_user.is_bot:
-            is_reply_to_bot = True
+    # Перевіряємо, чи це продовження діалогу з Бугайчиком (якщо минулу репліку дав Бугайчик цьому ж користувачу)
+    is_dialogue_continuation = False
+    if recent_history and not is_reply_to_bot and not has_bot_keyword:
+        lines = [l.strip() for l in recent_history.strip().splitlines() if l.strip()]
+        if len(lines) >= 2:
+            last_line = lines[-1]
+            prev_line = lines[-2]
+            if "Бугайчик:" in last_line and (sender_name in prev_line or "Користувач:" in prev_line):
+                msg_low = msg_content.lower().strip()
+                if any(kw in msg_low for kw in ['що ти', 'шо ти', 'як ти', 'чому', 'а ти', 'ти де', 'де ти', 'розкажи', 'а що', 'а шо', 'як справи', 'що робиш', 'шо робиш', 'чому ти', 'чого ти']):
+                    is_dialogue_continuation = True
 
-    has_bot_keyword = bool(re.search(r'\b(бугайчик|бугай|бугі|бугаич|бугайчику|бугаю|бугімен|бугайчище)\w*\b', msg_content, re.IGNORECASE))
-
-    # 3. БОТ ВІДПОВІДАЄ ТІЛЬКИ ПРИ ПРЯМОМУ ЗВЕРНЕННІ (Нік / Ключове слово) АБО ПРИ REPLAY НА ЙОГО ПОВІДОМЛЕННЯ!
-    if has_bot_keyword or is_reply_to_bot:
+    # 3. БОТ ВІДПОВІДАЄ ТІЛЬКИ ПРИ ПРЯМОМУ ЗВЕРНЕННІ, REPLAY АБО ПРИ ПРОДОВЖЕННІ ДІАЛОГУ!
+    if has_bot_keyword or is_reply_to_bot or is_dialogue_continuation:
         reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
         if reply_text:
             await send_safe_html_reply(update, reply_text)

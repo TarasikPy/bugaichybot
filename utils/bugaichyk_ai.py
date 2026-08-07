@@ -88,7 +88,7 @@ RISK_EVENTS = [
 ]
 
 def _clean_truncated_text(text: str) -> str:
-    """Гарантує, що текст не обрізано на півслові/півреченні. Видаляє будь-які службові чеклісти Gemini."""
+    """Гарантує, що текст не містить службових чеклістів Gemini та не обрізається."""
     if not text:
         return ""
 
@@ -111,29 +111,14 @@ def _clean_truncated_text(text: str) -> str:
     if not text:
         return ""
 
-    # 2. Очищаємо підвислі сполучники та зайві коми наприкінці (а..., і..., та..., але..., що..., бо...)
-    text = re.sub(r'[\s\,]+(?:\b(а|і|та|але|що|бо|як|чи)\b)?[\.\…\:\,-]*$', '.', text, flags=re.IGNORECASE).strip()
+    # 2. Якщо останнє слово перерване на 1-2 букви, прибираємо підвислий огрех
+    text = re.sub(r'\s+[а-яіїєА-ЯІЇЄ]{1,2}\.$', '.', text)
 
-    # 3. Повертаємо текст, якщо він вже закінчується на дійсний розділовий знак або емодзі
     valid_endings = ('.', '!', '?', '…', '"', '»', '🛑', '✨', '🔥', '👑', '💖', '☕', '⚡', '🌾', '💣', '📜', ')', ']', '}')
-    if text.endswith(valid_endings):
-        return text
+    if not text.endswith(valid_endings):
+        text += "."
 
-    # 4. Якщо речення перервалося на півслові, шукаємо останнє завершене речення (. ! ? …)
-    last_punct = max(
-        text.rfind('.'),
-        text.rfind('!'),
-        text.rfind('?'),
-        text.rfind('…')
-    )
-
-    if last_punct > 15:
-        sub = text[:last_punct + 1].strip()
-        sub = re.sub(r'[\s\,]+(?:\b(а|і|та|але|що|бо|як|чи)\b)?[\.\…\:\,-]+$', '.', sub, flags=re.IGNORECASE).strip()
-        if len(sub) > 10:
-            return sub
-
-    return text.strip() + "."
+    return text
 
 async def call_gemini_api(system_instruction: str, user_prompt: str) -> str:
     """Викликає Google Gemini API з розширеним ротейшеном моделей та обробкою 429"""
