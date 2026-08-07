@@ -413,57 +413,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     has_bot_keyword = bool(re.search(r'\b(бугайчик|бугай|бугі|бугаич|бугайчику|бугаю|бугімен|бугайчище)\w*\b', msg_content, re.IGNORECASE))
 
-    # 3. Пряме звернення до бота за ім'ям АБО відповідь (reply) на його повідомлення -> ЗАВЖДИ 100% ВІДПОВІДЬ!
+    # 3. БОТ ВІДПОВІДАЄ ТІЛЬКИ ПРИ ПРЯМОМУ ЗВЕРНЕННІ (Нік / Ключове слово) АБО ПРИ REPLAY НА ЙОГО ПОВІДОМЛЕННЯ!
     if has_bot_keyword or is_reply_to_bot:
         reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
         if reply_text:
             await send_safe_html_reply(update, reply_text)
             return
 
-    # 3b. Обробка привітань (Слава Ісусу, Слава Йсу, Слава Україні, Привіт, Здоров...)
-    msg_lower = msg_content.lower().strip()
-    sender_link = create_user_link(update.message.from_user.id if update.message.from_user else None, sender_name)
-
-    if any(k in msg_lower for k in ['слава ісусу', 'слава йсу', 'слава ісусу христу', 'слава су']):
-        await send_safe_html_reply(update, "<i>*похрестився й шанобливо зняв капелюх*</i>\n\n<b>Слава навіки Богу! ✝️</b> Вітаю у нашому чаті, колєго!")
-        return
-
-    if 'слава україні' in msg_lower:
-        await send_safe_html_reply(update, "<i>*приклав руку до серця*</i>\n\n<b>Героям Слава! 🇺🇦</b> База тримається міцно!")
-        return
-
-    if any(k in msg_lower for k in ['привіт', 'здоров', 'добрий день', 'доброго дня', 'доброго ранку', 'добрий вечір', 'вітаю', 'здоровенькі були']):
-        reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
-        if reply_text:
-            await send_safe_html_reply(update, reply_text)
-            return
-
-    # 5. Автономна реакція Бугайчика на досягнення (права, універ, бюджет, робота, диплом)
-    achievement_pattern = r'\b(здав|здала|здав\(ла\))\s+на\s+права|\b(вступив|вступила)\s+(в|до|на)|\b(захистив|захистила)\s+диплом|\b(знайшов|знайшла)\s+роботу|\b(купив|купила)\s+(машину|авто|тачку)\b'
-    if re.search(achievement_pattern, msg_content, re.IGNORECASE):
-        congrats_prompt = f"Користувач {sender_name} поділився радісною новиною/досягненням у чаті: '{msg_content}'. Напиши гучну, дотепну, харизматичну вітальну репліку від Бугайчика (1-2 речення) з бойківською часткою 'ся' та підйобом по його/її лору!"
-        reply_text = await get_bugaichyk_chat_reply(sender_name, congrats_prompt, recent_history)
-        if reply_text:
-            await send_safe_html_reply(update, reply_text)
-            return
-
-    # Реакція на новинні слова у звичайних повідомленнях
-    news_keywords = [
-        'новин', 'мон', 'європ', 'польщ', 'рада', 'закон', 'президент', 'війна',
-        'уряд', 'універ', 'зсу', 'тцк', 'кабмін', 'путін', 'байден', 'трамп',
-        'зеленськ', 'єс', 'нато', 'сьогодні', 'повідомл', 't.me/', 'telegram.me/',
-        'pravda', 'tsn.ua', 'rbc', 'unian', 'censor', 'suspilne', 'nv.ua'
-    ]
-
-    is_news_link_or_kw = any(kw in msg_content.lower() for kw in news_keywords)
-
-    if is_news_link_or_kw and len(msg_content) > 10:
-        comment = await get_bugaichyk_news_commentary(msg_content, sender_name, recent_history)
-        if comment:
-            await send_safe_html_reply(update, comment)
-            return
-
-    # 6. Загальна фонова відповідь бота вимкнена — відповідає ТІЛЬКИ на прямі звернення, реплаї та великі події!
-    # (Не спамить у звичайний чат!)
+    # На всі інші звичайні повідомлення чату без ім'я бота і без reply — БОТ САМ ВЗАГАЛІ НЕ ПИШЕ (0% СПАМУ)!
     return
 
