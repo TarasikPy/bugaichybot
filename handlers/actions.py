@@ -469,7 +469,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if reply_text:
             await send_safe_html_reply(update, reply_text)
             return
-        if reply_text:
-            await send_safe_html_reply(update, reply_text)
-            return
 
