@@ -404,6 +404,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await send_safe_html_reply(update, comment)
         return
 
+    # Перевіряємо, чи це пряма відповідь (reply) на репліку Бугайчика
+    is_reply_to_bot = False
+    if update.message and update.message.reply_to_message and update.message.reply_to_message.from_user:
+        replied_user = update.message.reply_to_message.from_user
+        if replied_user.id == context.bot.id or replied_user.is_bot:
+            is_reply_to_bot = True
+
+    has_bot_keyword = bool(re.search(r'\b(бугайчик|бугай|бугі|бугаич|бугайчику|бугаю|бугімен|бугайчище)\w*\b', msg_content, re.IGNORECASE))
+
     # Перевіряємо, чи це продовження діалогу з Бугайчиком (якщо минулу репліку дав Бугайчик цьому ж користувачу)
     is_dialogue_continuation = False
     if recent_history and not is_reply_to_bot and not has_bot_keyword:
