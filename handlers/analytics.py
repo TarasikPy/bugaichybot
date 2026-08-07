@@ -114,7 +114,7 @@ def render_profile_tab(user_id: int, target_name: str, target_username: str, tab
         text = f"📖 <b>ПОВНИЙ ПСИХОЛОГІЧНИЙ ПОРТРЕТ</b>\n\n"
         text += f"👤 <b>Користувач:</b> {user_link}\n\n"
         if full_text:
-            clean_full = escape_html(full_text)
+            clean_full = escape_html(full_text[:3500])
             text += f"<blockquote expandable>{clean_full}</blockquote>\n"
         else:
             text += "<i>Повний текст портрета відсутній.</i>\n"
