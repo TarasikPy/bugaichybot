@@ -385,6 +385,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         asyncio.create_task(process_media_group_after_delay(media_group_id, delay=1.0))
         return
 
+    recent_history = get_recent_chat_messages(update.effective_chat.id, limit=35) if update.effective_chat else ""
+
     # 1. Перевірка на посилання відео/тікток/shorts/reels — завантажуємо відео у чат (навіть якщо повідомлення переслане)!
     raw_urls = re.findall(r'https?://[^\s>"]+', msg_content, re.IGNORECASE)
     video_keywords = ['tiktok.com', 'instagram.com', 'instagr.am', 'youtube.com/shorts', 'youtu.be', 'x.com', 'twitter.com']
