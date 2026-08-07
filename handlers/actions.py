@@ -463,10 +463,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await send_safe_html_reply(update, comment)
             return
 
-    # 6. Загальна фонова відповідь бота на звичайні повідомлення чату (30% шанс долучитися)
-    if random.random() < 0.30:
-        reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
-        if reply_text:
-            await send_safe_html_reply(update, reply_text)
-            return
+    # 6. Загальна фонова відповідь бота вимкнена — відповідає ТІЛЬКИ на прямі звернення, реплаї та великі події!
+    # (Не спамить у звичайний чат!)
+    return
 
