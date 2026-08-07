@@ -33,30 +33,20 @@ USER_ID_MAP = {
 with open(FULLLL_PATH, 'r', encoding='utf-8') as f:
     text = f.read()
 
-lines = text.split('\n')
-blocks = []
-current_header = None
-current_body = []
-
-for line in lines:
-    line_clean = line.strip()
-    if line_clean in USER_ID_MAP:
-        if current_header and current_body:
-            blocks.append((current_header, "\n".join(current_body)))
-        current_header = line_clean
-        current_body = []
-    else:
-        if current_header:
-            current_body.append(line)
-
-if current_header and current_body:
-    blocks.append((current_header, "\n".join(current_body)))
+header_regex = re.compile(r'\[Нік:\s*(.*?)\s*\|\s*ID:\s*(\d+)(?:\s*\|\s*Username:\s*@?([^\s\]]+))?\]')
+matches = list(header_regex.finditer(text))
 
 profiles = {}
 
-for header, block in blocks:
-    user_id, clean_name, username = USER_ID_MAP[header]
-    
+for i, m in enumerate(matches):
+    nick = m.group(1).strip()
+    user_id = int(m.group(2))
+    username = (m.group(3) or "").strip().lstrip('@').lower()
+
+    start_pos = m.end()
+    end_pos = matches[i+1].start() if i + 1 < len(matches) else len(text)
+    block = text[start_pos:end_pos].strip()
+
     sections = {
         'role': '',
         'style': '',
@@ -95,7 +85,7 @@ for header, block in blocks:
 
     profile_entry = {
         'user_id': user_id,
-        'name': clean_name,
+        'name': nick,
         'username': username,
         'role': sections['role'],
         'intro': intro,

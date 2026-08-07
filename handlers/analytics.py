@@ -146,9 +146,10 @@ def render_profile_tab(user_id: int, target_name: str, target_username: str, tab
     if ai_profile:
         card_text += f"🎭 <b>Роль у чаті:</b> <code>{escape_html(role)}</code>\n\n"
         if intro:
-            card_text += f"📝 <i>{escape_html(intro)}</i>\n\n"
-        if roast:
-            card_text += f"🎯 <b>Коронний підкол:</b> <i>{escape_html(roast)}</i>\n"
+            intro_clean = escape_html(intro).strip()
+            if not intro_clean.endswith('...'):
+                intro_clean += '...'
+            card_text += f"📝 <i>{intro_clean}</i>\n"
     else:
         card_text += "🎭 <b>Роль у чаті:</b> <code>Учасник чату</code>\n"
 
