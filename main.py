@@ -61,6 +61,27 @@ def start_health_check_server():
     logger.info(f"🌐 Health-Check HTTP Сервер запущено на порту {port}")
     server.serve_forever()
 
+async def send_daily_quote_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Щоденне розсилання ранкової цитати з Золотого Фонду Чату о 10:00 ранку"""
+    try:
+        from storage.analytics_db import get_all_active_chat_ids
+        from utils.bugaichyk_ai import get_random_quote
+
+        quote_text = await get_random_quote()
+        chat_ids = get_all_active_chat_ids()
+
+        for chat_id in chat_ids:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"☀️ <b>РАНКОВА ЦИТАТА ДНЯ (10:00 РАНКУ)!</b>\n\n{quote_text}",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.warning(f"Неможливо надіслати щоденну цитату в чат {chat_id}: {e}")
+    except Exception as e:
+        logger.error(f"Помилка в send_daily_quote_job: {e}")
+
 async def setup_bot_commands(application: Application) -> None:
     """Налаштовує меню команд бота та примусово скидає застарілі webhook сесії"""
     try:
@@ -94,6 +115,11 @@ async def setup_bot_commands(application: Application) -> None:
 
     await application.bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
     await application.bot.set_my_commands(group_commands, scope=BotCommandScopeAllGroupChats())
+
+    # Реєстрація щоденного завдання о 10:00 ранку
+    if application.job_queue:
+        target_time = datetime.time(hour=10, minute=0, second=0)
+        application.job_queue.run_daily(send_daily_quote_job, time=target_time, name="daily_quote_10am")
 
 def main() -> None:
     """Головна точка входу: ініціалізація та запуск бота для Render.com"""

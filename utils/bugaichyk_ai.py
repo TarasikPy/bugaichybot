@@ -88,7 +88,7 @@ RISK_EVENTS = [
 ]
 
 def _clean_truncated_text(text: str) -> str:
-    """Гарантує, що текст не містить службових чеклістів Gemini та не обрізається."""
+    """Гарантує чистий український текст без англійського службового самоаналізу Gemini."""
     if not text:
         return ""
 
@@ -97,9 +97,9 @@ def _clean_truncated_text(text: str) -> str:
     clean_lines = []
     for line in lines:
         l_str = line.strip()
-        if re.search(r'^\s*Check\s+against\s+rules\b', l_str, re.IGNORECASE):
+        if re.search(r'\b(clauses|Meaning|words|Boyko flavor|Check|Verification|Checklist|RP action|Blank line|Emoji limit|Structure|Formatting)\b', l_str, re.IGNORECASE):
             continue
-        if re.search(r'^\s*\*?\s*(Blank line|Emoji limit|Structure|Formatting|Checklist|RP action|Rule check|Verification)\b', l_str, re.IGNORECASE):
+        if re.search(r'^\s*\*?\s*(Check|Rule|Verification|Thought|Note|Task)\b', l_str, re.IGNORECASE):
             continue
         if re.search(r'^\s*\*?\s*\[[ xX]\]', l_str):
             continue
@@ -111,8 +111,13 @@ def _clean_truncated_text(text: str) -> str:
     if not text:
         return ""
 
-    # 2. Якщо останнє слово перерване на 1-2 букви, прибираємо підвислий огрех
-    text = re.sub(r'\s+[а-яіїєА-ЯІЇЄ]{1,2}\.$', '.', text)
+    # 2. Очищаємо англійські підвислий самоаналіз та оцінки
+    text = re.sub(r'\(?\d+\s*words\)?.*$', '', text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'/\s*clauses.*$', '', text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'\*\s*Meaning:.*$', '', text, flags=re.IGNORECASE).strip()
+
+    # 3. Прибираємо подвійні розділові знаки наприкінці (наприклад ,. або :.)
+    text = re.sub(r'[\,\;\:]+\.+$', '.', text).strip()
 
     valid_endings = ('.', '!', '?', '…', '"', '»', '🛑', '✨', '🔥', '👑', '💖', '☕', '⚡', '🌾', '💣', '📜', ')', ']', '}')
     if not text.endswith(valid_endings):
@@ -188,25 +193,19 @@ async def get_bugaichyk_weather_commentary(city: str, temp: float, desc: str, fe
     char_hint = ""
 
     if "львів" in city_lower or "lviv" in city_lower:
-        char_hint = "Це Львів! Прив'яжи коментар до Влада (качок, підвальна качалка, бруківка, кава)."
+        char_hint = "Це Львів! Затишне місто бруківки та кави."
     elif "лубни" in city_lower or "полтав" in city_lower:
-        char_hint = "Це Полтавщина/Лубни! Прив'яжи коментар до Марії (біологія, шаурма з людей, дрова)."
+        char_hint = "Це Полтавщина/Лубни!"
     elif "берлін" in city_lower or "berlin" in city_lower:
-        char_hint = "Це Берлін! Прив'яжи коментар до Лук'яна (європейська база, тусовки)."
+        char_hint = "Це Берлін!"
     elif "київ" in city_lower or "kyiv" in city_lower:
-        char_hint = "Це Київ! Прив'яжи коментар до Ярослава (КНУБА, натюрморти) або Маргарити (інженерка КАІ) чи Вероніки."
+        char_hint = "Це Київ!"
     elif "калуш" in city_lower or "варшав" in city_lower:
-        char_hint = "Це Калуш/Варшава! Прив'яжи коментар до Адріани (медикиня, дедлайни) чи Ангеліни (дипломатка)."
-    elif "хмельницьк" in city_lower:
-        char_hint = "Це Хмельниччина! Прив'яжи коментар до Аліни (булочка чату, танці, спортзал)."
-    elif "краснокутськ" in city_lower:
-        char_hint = "Це Краснокутськ! Прив'яжи коментар до Маргарити (дупа України, інженерія)."
-    elif "естон" in city_lower or "таллін" in city_lower:
-        char_hint = "Це Естонія! Прив'яжи коментар до Ab/Марії (монополія, іспит B2, сметана)."
-    elif "польщ" in city_lower or "карпат" in city_lower or "либохор" in city_lower:
-        char_hint = "Це Карпати/Польща! Прив'яжи коментар до Андрія Тромба (маса, пельмені) чи Кійотаки (малина, мівіна)."
+        char_hint = "Це Калуш/Варшава!"
+    elif "карпат" in city_lower or "либохор" in city_lower:
+        char_hint = "Це Карпати!"
 
-    prompt = f"Напиши 100% УНІКАЛЬНИЙ зухвалий коментар від Бугайчика (1-2 речення) до погоди в місті {city}: температура {temp}°C (відчувається {feels_like}°C), стан: {desc}. {char_hint} ЗАБОРОНЕНО згадувати 'Сергій перестав душнити'!"
+    prompt = f"Напиши 100% УНІКАЛЬНИЙ колоритний коментар від Бугайчика (1-2 повноцінні речення) до погоди в місті {city}: температура {temp}°C (відчувається {feels_like}°C), стан: {desc}. {char_hint} КАТЕГОРИЧНО ЗАБОРОНЕНО писати будь-що англійською мовою чи рахувати слова!"
     system = get_bugaichyk_prompt_for_user()
     ai_resp = await call_gemini_api(system, prompt)
     if ai_resp:
@@ -354,7 +353,7 @@ async def check_and_get_quote(user_id: int) -> tuple[bool, str]:
     _daily_quotes_cache['users'].add(user_id)
     char_name, char_desc = random.choice(CHARACTERS_LIST)
 
-    quote_prompt = f"Згенеруй 100% унікальну, філософсько-абсурдну, глибоку або крінжову цитату в стилі персонажа {char_name} ({char_desc}). Напиши ТІЛЬКИ текст цитати в лапках."
+    quote_prompt = f"Згенеруй 100% унікальну, КОРОТКУ (до 10-15 слів, 1 повноцінне завершене речення!) цитату в стилі персонажа {char_name} ({char_desc}). Напиши ТІЛЬКИ текст цитати в лапках."
     system = get_bugaichyk_prompt_for_user()
     ai_quote = await call_gemini_api(system, quote_prompt)
 
@@ -367,7 +366,7 @@ async def check_and_get_quote(user_id: int) -> tuple[bool, str]:
 async def get_random_quote() -> str:
     """Генерує випадкову цитату з Золотого фонду через Gemini або локальний список"""
     char_name, char_desc = random.choice(CHARACTERS_LIST)
-    quote_prompt = f"Згенеруй 100% унікальну, філософсько-абсурдну, глибоку або крінжову цитату в стилі персонажа {char_name} ({char_desc}). Напиши ТІЛЬКИ текст цитати в лапках."
+    quote_prompt = f"Згенеруй 100% унікальну, КОРОТКУ (до 10-15 слів, 1 повноцінне завершене речення!) цитату в стилі персонажа {char_name} ({char_desc}). Напиши ТІЛЬКИ текст цитати в лапках."
     system = get_bugaichyk_prompt_for_user()
     ai_quote = await call_gemini_api(system, quote_prompt)
 
