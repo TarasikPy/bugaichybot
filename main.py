@@ -130,6 +130,10 @@ def main() -> None:
     # 2. Нескінченний цикл запуску з авто-відновленням при 409 Conflict
     while True:
         try:
+            # Створюємо новий чистий event loop для кожного запуску (запобігає 'Event loop is closed')
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
             application = (
                 Application.builder()
                 .token(BOT_TOKEN)
