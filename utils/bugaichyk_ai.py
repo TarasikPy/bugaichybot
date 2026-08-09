@@ -88,22 +88,23 @@ RISK_EVENTS = [
 ]
 
 def _clean_truncated_text(text: str) -> str:
-    """Гарантує чистий український текст без англійського службового самоаналізу Gemini."""
+    """Гарантує чистий український текст без англійського службового самоаналізу та перекладу Gemini."""
     if not text:
         return ""
 
-    # 1. Видаляємо службові чеклісти/prompt-evaluation від Gemini
     lines = text.splitlines()
     clean_lines = []
     for line in lines:
         l_str = line.strip()
-        if re.search(r'\b(clauses|Meaning|words|Boyko flavor|Check|Verification|Checklist|RP action|Blank line|Emoji limit|Structure|Formatting)\b', l_str, re.IGNORECASE):
+        if re.search(r'\b(clauses|Meaning|words|Boyko flavor|Check|Verification|Checklist|RP action|Blank line|Emoji limit|Structure|Formatting|Length)\b', l_str, re.IGNORECASE):
             continue
-        if re.search(r'^\s*\*?\s*(Check|Rule|Verification|Thought|Note|Task)\b', l_str, re.IGNORECASE):
+        if re.search(r'^\s*\*?\s*(Check|Rule|Verification|Thought|Note|Task|Length)\b', l_str, re.IGNORECASE):
             continue
         if re.search(r'^\s*\*?\s*\[[ xX]\]', l_str):
             continue
         if re.search(r'with asterisks\?\s*(Yes|No)\.?', l_str, re.IGNORECASE):
+            continue
+        if re.search(r'`[а-яіїєА-ЯІЇЄ]+`?\s*\([a-zA-Z\s]+\)', l_str):
             continue
         clean_lines.append(line)
 
@@ -111,10 +112,12 @@ def _clean_truncated_text(text: str) -> str:
     if not text:
         return ""
 
-    # 2. Очищаємо англійські підвислий самоаналіз та оцінки
+    # 2. Очищаємо підвислий англійський самоаналіз, переклади у дужках (today), (good), (friend), та Length
+    text = re.sub(r'\s*\([a-zA-Z\s\d]+\)', '', text)
     text = re.sub(r'\(?\d+\s*words\)?.*$', '', text, flags=re.IGNORECASE).strip()
     text = re.sub(r'/\s*clauses.*$', '', text, flags=re.IGNORECASE).strip()
     text = re.sub(r'\*\s*Meaning:.*$', '', text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'\*\s*Length:.*$', '', text, flags=re.IGNORECASE).strip()
 
     # 3. Прибираємо подвійні розділові знаки наприкінці (наприклад ,. або :.)
     text = re.sub(r'[\,\;\:]+\.+$', '.', text).strip()
@@ -134,7 +137,7 @@ async def call_gemini_api(system_instruction: str, user_prompt: str) -> str:
         "contents": [
             {
                 "role": "user",
-                "parts": [{"text": f"{system_instruction}\n\nКАТЕГОРИЧНІ ТА АБСОЛЮТНІ ПРАВИЛА:\n1. ВІДПОВІДАЙ ОДРАЗУ У РОЛІ БУГАЙЧИКА! КАТЕГОРИЧНО ЗАБОРОНЕНО виводити будь-які технічні перевірки правил ('Check against rules', 'RP action on line...'), чеклісти чи пояснення!\n2. Відповідай колоритною українською мовою Бойка з Карпат з часткою 'ся'!\n3. НЕ починай кожне повідомлення з 'Ба як!'! НІКОЛИ не залишай тільки РП-дію у зірочках без самого тексту відповіді!\n\nЗАВДАННЯ: {user_prompt}"}]
+                "parts": [{"text": f"{system_instruction}\n\nКАТЕГОРИЧНІ ТА АБСОЛЮТНІ ПРАВИЛА:\n1. ВІДПОВІДАЙ ОДРАЗУ У РОЛІ БУГАЙЧИКА! КАТЕГОРИЧНО ЗАБОРОНЕНО виводити будь-які англійські слова, переклади слів у дужках (today), (good), (friend), технічні перевірки правил ('Check against rules', 'Length:'), чеклісти чи пояснення!\n2. Відповідай колоритною українською мовою Бойка з Карпат з часткою 'ся'!\n3. НЕ починай кожне повідомлення з 'Ба як!'! НІКОЛИ не залишай тільки РП-дію у зірочках без самого тексту відповіді!\n\nЗАВДАННЯ: {user_prompt}"}]
             }
         ],
         "generationConfig": {
