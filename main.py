@@ -46,10 +46,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
-    """Міні-вебсервер для успішного проходження Render Health Check (No open ports detected)"""
+    """Міні-вебсервер для успішного проходження Render Health Check та UptimeRobot (підтримка GET та HEAD)"""
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", "2")
         self.end_headers()
         self.wfile.write(b"OK")
 
