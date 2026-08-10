@@ -4,6 +4,8 @@ USERS_MAP = {
     "kazubrid": "Андрій Тромб",
     "apankiv": "Адріанікс🎀",
     "mariai_k": "Марія",
+    "mashasu": "Марія Естонія",
+    "masha_su": "Марія Естонія",
     "it_alina6": "Alina",
     "poluni_chka": "мяу",
     "lordworldss": "Владислав Сидор",

@@ -83,7 +83,7 @@ async def send_daily_quote_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"☀️ <b>РАНКОВА ЦИТАТА ДНЯ (10:00 РАНКУ)!</b>\n\n{quote_text}",
+                    text=quote_text,
                     parse_mode="HTML"
                 )
             except Exception as e:

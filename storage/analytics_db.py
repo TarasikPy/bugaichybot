@@ -8,7 +8,8 @@ from config.settings import DEFAULT_CHAT_ID
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = 'data'
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
 HISTORY_ANALYTICS_FILE = os.path.join(DATA_DIR, 'chat_analytics.json')
 LIVE_ANALYTICS_FILE = os.path.join(DATA_DIR, 'live_analytics.json')
 
@@ -216,16 +217,21 @@ def get_user_history_profile(user_id: int, username: str = "") -> Optional[Dict[
     history = load_history_analytics()
     profiles = history.get('profiles', {})
 
-    # Пошук за ID
+    # 1. Пошук за ID
     if str(user_id) in profiles:
         return profiles[str(user_id)]
 
-    # Пошук за username
+    # 2. Пошук за username
     if username:
         clean_uname = username.lstrip('@').lower()
         for p in profiles.values():
-            if p.get('username', '').lower() == clean_uname:
+            p_uname = (p.get('username') or '').lower()
+            if p_uname and (clean_uname in p_uname or p_uname in clean_uname):
                 return p
+
+    # 3. Фолбек для Марії (ID 6266441947 / @mashasu / @masha_su)
+    if user_id in (6266441947, 2005833676) or (username and username.lower() in ('mashasu', 'masha_su', 'mariai_k')):
+        return profiles.get("2005833676")
 
     return None
 

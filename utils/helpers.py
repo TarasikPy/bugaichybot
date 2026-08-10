@@ -28,6 +28,22 @@ USER_ID_MAP = {
     6266441947: "Марія Естонія"
 }
 
+USERNAME_TO_ID_MAP = {
+    "shadow_tar": 1318789006,
+    "kazubrid": 5730136104,
+    "apankiv": 1286527597,
+    "mariai_k": 2005833676,
+    "mashasu": 6266441947,
+    "masha_su": 6266441947,
+    "it_alina6": 7292577573,
+    "poluni_chka": 2045119679,
+    "lordworldss": 1375996435,
+    "ftcserhiy": 1591084301,
+    "linali_0": 1922420385,
+    "desomaro": 1461200386,
+    "petrovychyaroslav": 878744016
+}
+
 def resolve_clean_user_name(user=None, raw_name: str = "") -> str:
     """Перетворює юзернейм або first_name з Юнікод-шрифтами у красиве українське ім'я з USERS_MAP"""
     if user:
@@ -317,9 +333,11 @@ async def resolve_target_user_info(update) -> tuple:
         if raw_target.isdigit():
             target_user_id = int(raw_target)
 
-        # 2c. USERS_MAP
+        # 2c. USERS_MAP & USERNAME_TO_ID_MAP
         if raw_target in USERS_MAP:
             target_name = USERS_MAP[raw_target]
+        if raw_target in USERNAME_TO_ID_MAP:
+            target_user_id = USERNAME_TO_ID_MAP[raw_target]
 
         # 2d. USERS_CACHE (storage/users_cache.json)
         if not target_user_id or not target_name:
