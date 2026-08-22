@@ -2,30 +2,28 @@ import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.helpers import create_user_link
-from utils.bugaichyk_ai import get_random_quote, check_and_get_quote
+from handlers.mechanics import get_random_risk
 
 HELP_TEXT = (
-    "📋 <b>ОФІЦІЙНА ДОВІДКА КОМАНД БУГАЙЧИКА</b> 🌾\n\n"
-    "📊 <b>Аналітика та Профілі:</b>\n"
-    "• /chatstats (або <code>!стата</code>) — Топ активності чату за сьогодні\n"
-    "• /profile (або <code>!профіль [@user]</code>) — Особиста картка користувача\n"
-    "• /id (або <code>!інфо [@user]</code>) — Telegram ID, роль та пара у чаті\n\n"
-    "🔥 <b>Розваги та Суд Бугайчика:</b>\n"
-    "• /roast (або <code>!прожарка [@user]</code>) — Саркастичний підкол по лору\n"
-    "• /judge (або <code>!суд</code>) — Суд Бугайчика для вирішення срачів\n"
-    "• /quote (або <code>!цитата</code>) — Золотий фонд мудрості чату\n"
-    "• /risk (або <code>!ризик</code>) — РП-Рулетка подій та випробувань\n\n"
+    "📋 <b>ДОВІДКА КОМАНД БУГАЙЧИКА (Vanilla)</b> 🌾\n\n"
+    "👤 <b>Профілі та Статистика:</b>\n"
+    "• /profile (або <code>!профіль [@user]</code>) — Особиста картка користувача та психоаналіз\n"
+    "• /id (або <code>!інфо [@user]</code>) — Telegram ID, роль та пара у чаті\n"
+    "• /chatstats (або <code>!стата</code>) — Топ активності чату за сьогодні\n\n"
     "❤️ <b>Стосунки та Парні дії:</b>\n"
-    "• /dating (або <code>!пропозиція</code>) — Запропонувати зустрічатися\n"
+    "• /dating (або <code>!пропозиція [@user]</code>) — Запропонувати зустрічатися\n"
     "• /relationships (або <code>!стосунки</code>) — Список усіх пар чату\n"
     "• /myrelationships — Інформація про власні стосунки\n"
     "• /breakup (або <code>!розрив</code>) — Розірвати стосунки\n"
     "• <code>/kiss</code>, <code>/hug</code>, <code>/love</code>, <code>/date</code>, <code>/gift</code> — Прокачка очок у парі\n\n"
-    "🎭 <b>РП-Дії (з підтримкою reply / mentions):</b>\n"
-    "• <code>!вдарив</code>, <code>!збив</code>, <code>!обняв</code>, <code>!поцілував</code> — ЖИВІ РП-реакції\n\n"
-    "🌦️ <b>Погода та Розваги:</b>\n"
-    "• /weather (або <code>!погода [місто]</code>) — Прогноз погоди від Бугайчика\n"
-    "• /flipcoin — Кинути монетку (Орел чи Решка)"
+    "🎭 <b>РП-Дії (reply або @username):</b>\n"
+    "• <code>!обняв</code>, <code>!поцілував</code>, <code>!вдарив</code>, <code>!кусь</code> — Вільні РП-реакції\n\n"
+    "🎲 <b>Розваги та Погода:</b>\n"
+    "• /risk (або <code>!ризик</code>) — РП-Рулетка подій чату\n"
+    "• /flipcoin — Кинути монетку (Орел чи Решка)\n"
+    "• /weather (або <code>!погода [місто]</code>) — Прогноз погоди\n\n"
+    "🎬 <b>Відеосейвер:</b>\n"
+    "• Надішліть посилання на <b>TikTok, Reels, Shorts або X/Twitter</b> — і бот миттєво завантажить чисте відео у чат!"
 )
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -36,7 +34,7 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("❤️ Стосунки", callback_data='menu_relationships')
         ],
         [
-            InlineKeyboardButton("📜 Мудрість дня", callback_data='menu_quote'),
+            InlineKeyboardButton("🎰 РП-Рулетка", callback_data='menu_risk'),
             InlineKeyboardButton("📊 Статистика", callback_data='menu_stats')
         ],
         [
@@ -57,7 +55,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     welcome_text = (
         f"🌲 <b>Дай Боже, {user_link}!</b>\n\n"
-        "Я — Бугайчик, справжній карпатський газда, господар цього чату та твій давній колєга з гір! ☕\n\n"
+        "Я — Бугайчик, господар цього чату та твій вірний колєга з гір! ☕\n\n"
         "Обирай потрібний розділ у меню нижче! 👇"
     )
 
@@ -120,17 +118,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         await query.edit_message_text(text=text, reply_markup=get_back_keyboard(), parse_mode='HTML')
 
-    elif data == 'menu_quote':
+    elif data == 'menu_risk':
         user = query.from_user
-        _, quote_text = await check_and_get_quote(user.id if user else 0)
-        await query.edit_message_text(text=quote_text, reply_markup=get_back_keyboard(), parse_mode='HTML')
+        user_name = user.first_name if user else "Користувач"
+        user_link = create_user_link(user.id if user else 0, user_name)
+        risk_text = get_random_risk(user_link)
+        await query.edit_message_text(text=risk_text, reply_markup=get_back_keyboard(), parse_mode='HTML')
 
     elif data == 'menu_about':
         text = (
-            "🌲 <b>ПРО БУГАЙЧИКА (Карпатський Газда):</b>\n\n"
-            "Дай Боже! Я — Бугайчик, колоритний Бойко з Карпат, ваш давній колєга та господар цього чату. "
-            "Я завжди радий розрулити будь-яку суперечку, видати сувору карпатську мудрість, "
-            "підтримати бесіду та простежити за залізобетонним порядком у чаті!\n\n"
-            "⚡ <i>На варті нашої спільної бази 24/7!</i>"
+            "🌲 <b>ПРО БУГАЙЧИКА:</b>\n\n"
+            "Дай Боже! Я — Бугайчик, колоритний карпатський газда. "
+            "Я допомагаю взаємодіяти через РП-дії, веду статистику чату, "
+            "допомагаю будувати стосунки, показую точну погоду та швидко сейвлю відео з TikTok, Instagram Reels, Shorts та Twitter!\n\n"
+            "⚡ <i>Завжди на зв'язку!</i>"
         )
         await query.edit_message_text(text=text, reply_markup=get_back_keyboard(), parse_mode='HTML')

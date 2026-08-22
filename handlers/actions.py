@@ -12,15 +12,9 @@ from utils.helpers import (
     create_user_link,
     escape_html,
     send_safe_html_reply,
-    resolve_clean_user_name,
-    format_ai_response_to_html
-)
-from utils.bugaichyk_ai import (
-    get_bugaichyk_news_commentary,
-    get_bugaichyk_chat_reply
+    resolve_clean_user_name
 )
 from storage.analytics_db import (
-    get_recent_chat_messages,
     record_live_message,
     rescan_and_sync_analytics,
     get_all_active_chat_ids
@@ -30,13 +24,11 @@ from storage.json_db import load_chat_relationships, save_chat_relationships
 from utils.video_downloader import download_and_send_video
 
 from handlers.relationships import relationships_command, my_relationships_command, breakup_command, handle_couple_command
-from handlers.analytics import chat_stats_command, profile_command
+from handlers.analytics import chat_stats_command, profile_command, id_command
 from handlers.weather import weather_command
-from handlers.mechanics import roast_command, judge_command, quote_command, risk_command
+from handlers.mechanics import risk_command
 
 logger = logging.getLogger(__name__)
-
-import random
 
 # Мапінг українських аліасів для зручності користувачів
 COMMAND_ALIASES = {
@@ -51,13 +43,6 @@ COMMAND_ALIASES = {
     'допомога': 'commands',
     'погода': 'weather',
     'weather': 'weather',
-    'roast': 'roast',
-    'прожарка': 'roast',
-    'judge': 'judge',
-    'суд': 'judge',
-    'цитата': 'quote',
-    'мудрість': 'quote',
-    'quote': 'quote',
     'ризик': 'risk',
     'рулетка': 'risk',
     'risk': 'risk',
@@ -205,26 +190,8 @@ async def handle_action_command(update: Update, context: ContextTypes.DEFAULT_TY
 
     await _send_html_message(context, update.effective_chat.id, response)
 
-MEDIA_GROUP_BUFFERS = {}
-
-async def process_media_group_after_delay(media_group_id: str, delay: float = 1.0) -> None:
-    """Очікує 1 секунду, щоб назбирати весь підпис з усіх 10 відео альбому, і робить ОДНУ відповідь"""
-    await asyncio.sleep(delay)
-
-    group_data = MEDIA_GROUP_BUFFERS.pop(media_group_id, None)
-    if not group_data:
-        return
-
-    update = group_data["update"]
-    msg_content = group_data["text"].strip()
-
-    input_text = msg_content if msg_content else "[Користувач переслав медіа/файл/пост без тексту]"
-    comment = await get_bugaichyk_news_commentary(input_text)
-    if comment:
-        await send_safe_html_reply(update, comment)
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Головний обробник текстових повідомлень з підтримкою кешування юзерів, трекінгу активності та префіксів / та !"""
+    """Головний обробник повідомлень: трекінг статистики, роутинг команд та завантаження відео"""
     if not update.message:
         return
 
@@ -236,41 +203,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if user.username:
             await update_user_cache(user.username, first_name, user.id)
 
-    # Живий трекінг статистики у storage/analytics_db.py
     msg_content = (update.message.text or update.message.caption or "").strip()
 
-    # 0. Перевірка на таємні команди від власника в ЛС бота (!пиши, !скан, /rescan)
-    if update.effective_chat.type == 'private':
+    # 0. Перевірка на секретні команди від власника в ЛС бота (!скан, /rescan, !пиши, /say)
+    if update.effective_chat and update.effective_chat.type == 'private':
         sender_id = update.message.from_user.id if update.message and update.message.from_user else 0
         if sender_id == 1318789006:
-            # Таємна команда пересканування статистики для власника
             if re.match(r'^(?:!скан|/rescan|!синхрон)', msg_content, re.IGNORECASE):
                 counts = rescan_and_sync_analytics()
                 info = "\n".join([f"• <b>{k}</b>: {v} смс" for k, v in counts.items()]) if counts else "Немає нових повідомлень."
                 await update.message.reply_text(f"📊 <b>Аналітику та статистику успішно проскановано й оновлено!</b>\n\n{info}", parse_mode='HTML')
                 return
 
-        say_match = re.match(r'^(?:!пиши|/пиши|/say)\s+(.+)', msg_content, re.DOTALL | re.IGNORECASE)
-        if say_match:
-            if sender_id != 1318789006:
-                return  # Мовчки ігноруємо для всіх інших користувачів
+            say_match = re.match(r'^(?:!пиши|/пиши|/say)\s+(.+)', msg_content, re.DOTALL | re.IGNORECASE)
+            if say_match:
+                broadcast_text = say_match.group(1).strip()
+                target_chats = get_all_active_chat_ids()
+                sent_count = 0
 
-            broadcast_text = say_match.group(1).strip()
-            formatted_text = format_ai_response_to_html(broadcast_text)
-            target_chats = get_all_active_chat_ids()
-            sent_count = 0
+                for cid in target_chats:
+                    try:
+                        await context.bot.send_message(chat_id=cid, text=broadcast_text, parse_mode='HTML')
+                        sent_count += 1
+                    except Exception as e:
+                        logger.error(f"Помилка трансляції в {cid}: {e}")
 
-            for cid in target_chats:
-                try:
-                    await context.bot.send_message(chat_id=cid, text=formatted_text, parse_mode='HTML')
-                    sent_count += 1
-                except Exception as e:
-                    logger.error(f"Помилка трансляції в {cid}: {e}")
+                if sent_count > 0:
+                    await update.message.reply_text(f"✅ <b>Повідомлення анонімно відправлено в {sent_count} чат(ів)!</b>", parse_mode='HTML')
+                return
 
-            if sent_count > 0:
-                await update.message.reply_text(f"✅ <b>Повідомлення анонімно відправлено в {sent_count} чат(ів)!</b>", parse_mode='HTML')
-            return
-
+    # Живий трекінг статистики у storage/analytics_db.py
     if update.message.from_user and update.effective_chat:
         chat_id = update.effective_chat.id
         user = update.message.from_user
@@ -335,17 +297,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             elif command == 'weather':
                 await weather_command(update, context)
                 return
-            elif command == 'roast':
-                await roast_command(update, context)
-                return
-            elif command == 'judge':
-                await judge_command(update, context)
-                return
-            elif command == 'quote':
-                await quote_command(update, context)
-                return
             elif command == 'risk':
                 await risk_command(update, context)
+                return
+            elif command in ('id', 'whois'):
+                await id_command(update, context)
                 return
 
             if command in ALL_COUPLE_COMMANDS or command in ('dating', 'trio'):
@@ -360,34 +316,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await handle_action_command(update, context)
         return
 
-    # 2. ОБРОБКА ВСІХ ФОРВАРДІВ (текст, медіа, канали, користувачі)
-    is_forward = bool(
-        getattr(update.message, 'forward_origin', None) or
-        getattr(update.message, 'forward_from_chat', None) or
-        getattr(update.message, 'forward_date', None) or
-        getattr(update.message, 'forward_from', None)
-    )
-
-    media_group_id = getattr(update.message, 'media_group_id', None)
-
-    # Якщо це форвард-альбом з кількох відео/фото, збираємо весь підпис протягом 1 сек і робимо 1 реакцію
-    if is_forward and media_group_id:
-        if media_group_id in MEDIA_GROUP_BUFFERS:
-            if len(msg_content) > len(MEDIA_GROUP_BUFFERS[media_group_id]["text"]):
-                MEDIA_GROUP_BUFFERS[media_group_id]["text"] = msg_content
-                MEDIA_GROUP_BUFFERS[media_group_id]["update"] = update
-            return
-
-        MEDIA_GROUP_BUFFERS[media_group_id] = {
-            "update": update,
-            "text": msg_content
-        }
-        asyncio.create_task(process_media_group_after_delay(media_group_id, delay=1.0))
-        return
-
-    recent_history = get_recent_chat_messages(update.effective_chat.id, limit=35) if update.effective_chat else ""
-
-    # 1. Перевірка на посилання відео/тікток/shorts/reels — завантажуємо відео у чат (навіть якщо повідомлення переслане)!
+    # 2. ПЕРЕВІРКА НА ПОСИЛАННЯ ВІДЕО (TikTok / Reels / Shorts / Twitter / X)
     raw_urls = re.findall(r'https?://[^\s>"]+', msg_content, re.IGNORECASE)
     video_keywords = ['tiktok.com', 'instagram.com', 'instagr.am', 'youtube.com/shorts', 'youtu.be', 'x.com', 'twitter.com']
 
@@ -396,42 +325,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await download_and_send_video(update, context, url)
             return
 
-    # 2. Переслані новини/пости -> Коментар від Бугайчика
-    if is_forward:
-        input_text = msg_content if msg_content else "[Користувач переслав медіа/файл/пост без тексту]"
-        comment = await get_bugaichyk_news_commentary(input_text, sender_name, recent_history)
-        if comment:
-            await send_safe_html_reply(update, comment)
-        return
-
-    # Перевіряємо, чи це пряма відповідь (reply) на репліку Бугайчика
-    is_reply_to_bot = False
-    if update.message and update.message.reply_to_message and update.message.reply_to_message.from_user:
-        replied_user = update.message.reply_to_message.from_user
-        if replied_user.id == context.bot.id or replied_user.is_bot:
-            is_reply_to_bot = True
-
-    has_bot_keyword = bool(re.search(r'\b(бугайчик|бугай|бугі|бугаич|бугайчику|бугаю|бугімен|бугайчище)\w*\b', msg_content, re.IGNORECASE))
-
-    # Перевіряємо, чи це продовження діалогу з Бугайчиком (якщо минулу репліку дав Бугайчик цьому ж користувачу)
-    is_dialogue_continuation = False
-    if recent_history and not is_reply_to_bot and not has_bot_keyword:
-        lines = [l.strip() for l in recent_history.strip().splitlines() if l.strip()]
-        if len(lines) >= 2:
-            last_line = lines[-1]
-            prev_line = lines[-2]
-            if "Бугайчик:" in last_line and (sender_name in prev_line or "Користувач:" in prev_line):
-                msg_low = msg_content.lower().strip()
-                if any(kw in msg_low for kw in ['що ти', 'шо ти', 'як ти', 'чому', 'а ти', 'ти де', 'де ти', 'розкажи', 'а що', 'а шо', 'як справи', 'що робиш', 'шо робиш', 'чому ти', 'чого ти']):
-                    is_dialogue_continuation = True
-
-    # 3. БОТ ВІДПОВІДАЄ ТІЛЬКИ ПРИ ПРЯМОМУ ЗВЕРНЕННІ, REPLAY АБО ПРИ ПРОДОВЖЕННІ ДІАЛОГУ!
-    if has_bot_keyword or is_reply_to_bot or is_dialogue_continuation:
-        reply_text = await get_bugaichyk_chat_reply(sender_name, msg_content, recent_history)
-        if reply_text:
-            await send_safe_html_reply(update, reply_text)
-            return
-
-    # На всі інші звичайні повідомлення чату без ім'я бота і без reply — БОТ САМ ВЗАГАЛІ НЕ ПИШЕ (0% СПАМУ)!
+    # 3. НА ВСІ ІНШІ ПОВІДОМЛЕННЯ (текст, форварди, фото) — БОТ 100% МОВЧИТЬ
     return
+
 

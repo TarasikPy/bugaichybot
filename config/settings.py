@@ -6,7 +6,6 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не знайдено в змінних середовища! Створіть файл .env з BOT_TOKEN.")

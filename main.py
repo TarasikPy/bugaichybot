@@ -35,7 +35,7 @@ from handlers.relationships import (
 )
 from handlers.analytics import chat_stats_command, profile_command, id_command, handle_reaction_update, handle_profile_callback
 from handlers.weather import weather_command
-from handlers.mechanics import roast_command, judge_command, quote_command, risk_command
+from handlers.mechanics import risk_command
 from handlers.actions import handle_message
 
 # Налаштування логування
@@ -70,27 +70,6 @@ def start_health_check_server():
     logger.info(f"🌐 Health-Check HTTP Сервер запущено на порту {port}")
     server.serve_forever()
 
-async def send_daily_quote_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Щоденне розсилання ранкової цитати з Золотого Фонду Чату о 10:00 ранку"""
-    try:
-        from storage.analytics_db import get_all_active_chat_ids
-        from utils.bugaichyk_ai import get_random_quote
-
-        quote_text = await get_random_quote()
-        chat_ids = get_all_active_chat_ids()
-
-        for chat_id in chat_ids:
-            try:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=quote_text,
-                    parse_mode="HTML"
-                )
-            except Exception as e:
-                logger.warning(f"Неможливо надіслати щоденну цитату в чат {chat_id}: {e}")
-    except Exception as e:
-        logger.error(f"Помилка в send_daily_quote_job: {e}")
-
 async def setup_bot_commands(application: Application) -> None:
     """Налаштовує меню команд бота та примусово скидає застарілі webhook сесії"""
     try:
@@ -99,36 +78,29 @@ async def setup_bot_commands(application: Application) -> None:
         logger.warning(f"delete_webhook попередження: {e}")
 
     private_commands = [
-        BotCommand("start", "Головне меню бота"),
-        BotCommand("help", "Довідка"),
-        BotCommand("profile", "👤 Психологічний профіль та статистика"),
-        BotCommand("weather", "🌤 Погода в місті")
+        BotCommand("start", "💫 Головне меню бота"),
+        BotCommand("help", "📋 Довідка та команди"),
+        BotCommand("profile", "👤 Профіль та психоаналіз"),
+        BotCommand("weather", "🌤 Погода")
     ]
 
     group_commands = [
-        BotCommand("start", "💫 Розпочати роботу з ботом"),
-        BotCommand("flipcoin", "🪙 Кинути монету"),
-        BotCommand("relationships", "💕 Показати всі стосунки"),
-        BotCommand("myrelationships", "❤️ Показати ваші стосунки"),
-        BotCommand("commands", "📋 Всі команди"),
-        BotCommand("dating", "💫 Розпочати стосунки (пропозиція з підтвердженням)"),
+        BotCommand("start", "💫 Головне меню бота"),
+        BotCommand("profile", "👤 Профіль та психоаналіз"),
+        BotCommand("id", "🆔 Інфо про користувача"),
+        BotCommand("chatstats", "📊 Активність чату"),
+        BotCommand("relationships", "💕 Список пар чату"),
+        BotCommand("myrelationships", "❤️ Мої стосунки"),
+        BotCommand("dating", "💍 Запропонувати зустрічатися"),
         BotCommand("breakup", "💔 Розірвати стосунки"),
-        BotCommand("chatstats", "📊 Аналітика активності чату"),
-        BotCommand("profile", "👤 Психологічний профіль та статистика"),
-        BotCommand("weather", "🌤 Погода в місті чи селі"),
-        BotCommand("roast", "🔥 Прожарка користувача"),
-        BotCommand("judge", "⚖️ Суд Бугайчика / Розбірки чату"),
-        BotCommand("quote", "📜 Золотий фонд чату (цитата дня)"),
-        BotCommand("risk", "🎰 РП-Рулетка подій з лору")
+        BotCommand("risk", "🎰 РП-Рулетка подій"),
+        BotCommand("flipcoin", "🪙 Монетка (Орел чи Решка)"),
+        BotCommand("weather", "🌤 Погода"),
+        BotCommand("commands", "📋 Всі команди")
     ]
 
     await application.bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
     await application.bot.set_my_commands(group_commands, scope=BotCommandScopeAllGroupChats())
-
-    # Реєстрація щоденного завдання о 10:00 ранку
-    if application.job_queue:
-        target_time = datetime.time(hour=10, minute=0, second=0)
-        application.job_queue.run_daily(send_daily_quote_job, time=target_time, name="daily_quote_10am")
 
 def main() -> None:
     """Головна точка входу: ініціалізація та запуск бота для Render.com"""
@@ -158,6 +130,7 @@ def main() -> None:
             # Реєстрація хендлерів команд
             application.add_handler(CommandHandler("start", start_command))
             application.add_handler(CommandHandler("help", help_command))
+            application.add_handler(CommandHandler("commands", commands_command))
             application.add_handler(CommandHandler("flipcoin", flipcoin_command))
             application.add_handler(CommandHandler("relationships", relationships_command))
             application.add_handler(CommandHandler("myrelationships", my_relationships_command))
@@ -166,14 +139,10 @@ def main() -> None:
             application.add_handler(CommandHandler("trio", trio_command))
             application.add_handler(CommandHandler("breakup", breakup_command))
             application.add_handler(CommandHandler("divorce", breakup_command))
-            application.add_handler(CommandHandler("commands", commands_command))
             application.add_handler(CommandHandler("chatstats", chat_stats_command))
             application.add_handler(CommandHandler("profile", profile_command))
             application.add_handler(CommandHandler(["id", "whois"], id_command))
             application.add_handler(CommandHandler("weather", weather_command))
-            application.add_handler(CommandHandler("roast", roast_command))
-            application.add_handler(CommandHandler("judge", judge_command))
-            application.add_handler(CommandHandler("quote", quote_command))
             application.add_handler(CommandHandler("risk", risk_command))
 
             # Обробник реакцій користувачів
@@ -188,7 +157,7 @@ def main() -> None:
             application.add_handler(MessageHandler(~filters.COMMAND, handle_message))
             application.add_handler(MessageHandler(filters.COMMAND, handle_message))
 
-            logger.info("🚀 Бот успішно запущений з захистом від Render 409 Conflict...")
+            logger.info("🚀 Vanilla Бот успішно запущений...")
 
             application.run_polling(
                 allowed_updates=Update.ALL_TYPES,

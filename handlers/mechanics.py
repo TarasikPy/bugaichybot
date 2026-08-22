@@ -1,136 +1,79 @@
-import re
+import random
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from config.names import USERS_MAP
-from utils.helpers import create_user_link, escape_html, send_safe_html_reply, resolve_clean_user_name
-from storage.analytics_db import get_user_history_profile, get_recent_chat_messages
-from utils.bugaichyk_ai import (
-    get_bugaichyk_roast,
-    get_bugaichyk_judge,
-    get_random_quote,
-    check_and_get_quote,
-    get_random_risk
-)
+from utils.helpers import create_user_link, send_safe_html_reply
 
 logger = logging.getLogger(__name__)
 
-async def roast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /roast — генерує саркастичний підкол для target юзера чи відправника"""
-    if not update.message:
-        return
+RISK_EVENTS = [
+    "🎉 <b>Марія зжалилася і не продала тебе на анатомічні препарати.</b> Отримуєш +100 респекту!",
+    "💀 <b>Сергій вичитав тобі 2-годинну лекцію про Гайдеггера.</b> Твій мозок закипів, втрачаєш 50 ґрошей.",
+    "🔥 <b>Ангеліна поділилася секретними шпаргалками.</b> Ти відчуваєш себе дипломатом на 5 хвилин!",
+    "🥩 <b>Андрій Тромб покликав тебе на маса-збір</b> і змусив з'їсти 3 баняки зупи з пивом.",
+    "🚜 <b>Кійотака змусив тебе пахати на плантаціях малини 12 годин,</b> але дав пачку гарячої мівінки!",
+    "👑 <b>Влад призначив тебе Міністром Підвальної Качалки</b> у своїй майбутній Галактичній Імперії!",
+    "💅 <b>Вероніка (мяу) назвала тебе 'бусічкою'</b> і відправила 10 сердечок у чат!",
+    "📖 <b>Маргарита присвятила тобі сатиричну оду КАІ.</b> Твоя самооцінка впала на -50.",
+    "🩺 <b>Адріана провела тобі експрес-огляд анатомії</b> і діагностувала хронічний недосип.",
+    "🎨 <b>Ярослав навчив тебе виживати в гуртожитку КНУБА</b> та дозволив спати на підлозі ^^",
+    "🥨 <b>Лук'ян прислав листівку з Берліна</b> з підписом 'Пояснюю за європейську базу!'",
+    "🥔 <b>Арма запряг тебе тягати мішки з бульбою у Львові.</b> М'язи ростуть, але спина болить!",
+    "🧁 <b>Аліна спекла для тебе фірмову булочку чату.</b> Твій настрій піднявся до максимуму!",
+    "⚡ <b>Бугайчик нагодував тебе баранбулями та бринзою.</b> Твоя карпатська сила +1000!",
+    "💻 <b>Сергій Прокопчук залучив тебе до ІТ-стартапу.</b> Зароблено 500 віртуальних доларів!",
+    "🥊 <b>Андрій Тромб викликав тебе на дуель на лоукіках.</b> Ти дивом вижив і втік!",
+    "🍜 <b>Кійотака зварив 7 літрів зупи з сокири</b> і нагодував увесь гуртожиток.",
+    "📜 <b>Марія написала про тебе депресивну новелу.</b> Ти посів перше місце на конкурсі тру-крайму!",
+    "🏰 <b>Влад спробував захопити сусіднє село,</b> але його зупинив розлючений бик.",
+    "🎀 <b>Вероніка (мяу) написала в чат капслоком:</b> 'Я ВАС ЛЮБЛЮЮЮЮ'! Всі розчулилися.",
+    "✈️ <b>Маргарита спроектувала тобі особистий літак у КАІ.</b> Політ пройшов успішно!",
+    "💉 <b>Адріана поставила тобі залік з біохімії о 3 ранку.</b> Ти витримав дедлайн!",
+    "🏛 <b>Ярослав намалював твій портрет у стилі clean look.</b> Ти виглядаєш як італійський естет!",
+    "🏰 <b>Ангеліна натиснула кнопку бану на токсиках.</b> У чаті настала тотальна гармонія!",
+    "☕ <b>Тарас пригостив тебе елітною кавою та дав пораду з кодингу.</b> База засвоєна!",
+    "🏋️‍♂️ <b>Влад змусив тебе пасти телят і сапати фосу.</b> Сільський хардкор пройдено!",
+    "🍕 <b>Кійотака знайшов акційну мівінку по 5 грн.</b> Вечірка століття в общазі!",
+    "📚 <b>Сергій порівняв твоє життя з творами Сковороди.</b> Ти задумався про сенс буття.",
+    "🧬 <b>Марія запропонувала розібрати хромосоми під мікроскопом.</b> Біологія вивчена!",
+    "🥊 <b>Андрій Тромб випадково зламав клавіатуру капслоком АХАХАХАХ.</b>",
+    "💅 <b>Вероніка обговорила з тобою новий манікюр та крем.</b> Ти став естет-експертом!",
+    "🛠 <b>Арма полагодив твій телефон ручним інструментом.</b> Техніка знову працює!",
+    "🎯 <b>Бугайчик перевірив твій розклад дня.</b> Час лягати спати раніше!",
+    "🎓 <b>Ангеліна провела міжнародний саміт чату в Google Meet.</b> Всі виступили блискуче!",
+    "🧘‍♀️ <b>Аліна провела годинну психотерапію.</b> Твоє вигорання зникло!",
+    "💤 <b>Ярослав вирубався на підлозі після 12 годин креслення.</b> Ти накрив його пледом.",
+    "🏥 <b>Адріана пояснила тобі структуру серця за 2 хвилини.</b> Анатомія +50!",
+    "🍺 <b>Андрій Тромб випив торпеду квасу з вуйками</b> і оголосив Либохору столицею світу!",
+    "🚜 <b>Влад вів сеанс магії Пітьми,</b> але мама гукнула його винести гній.",
+    "🔮 <b>Бугайчик покрутив старий дерев'яний календар</b> і пророкує тобі щасливий день!",
+    "🌟 <b>Вероніка та Аліна оголосили коаліцію позитиву.</b> Весь чат сяє від щастя!",
+    "🧪 <b>Маргарита зварила ідеальне какао за інженерною формулою.</b> Смакота!",
+    "💤 <b>Кійотака поспав 4 години під двома ковдрами.</b> Сили відновлено на 100%!",
+    "🎧 <b>Ярослав увімкнув гітарне соло.</b> Усі зловили кайф!",
+    "📜 <b>Сергій склав новий текст Конституції чату.</b> Порядок відновлено!",
+    "🕯 <b>Марія поділилася містичною історією при свічках.</b> Всі в чаті в заціпенінні!",
+    "🚀 <b>Влад і Андрій вирішили збудувати ракету з димоходів.</b> Старт перенесено на завтра!",
+    "💐 <b>Ангеліна роздала усім квіти за мир у чаті.</b> Токсичність -100%!",
+    "🏆 <b>Бугайчик оголосив тебе Газдою дня!</b> Твій авторитет злетів до небес!",
+    "✨ <b>Ти зловив абсолютний дзен разом із Бугайчиком.</b> Живи файно та радуйся життю!"
+]
 
-    sender = update.message.from_user
-    target_name = resolve_clean_user_name(sender, "Користувач")
-    target_id = sender.id if sender else None
-    target_lore = ""
-
-    # Reply перевірка
-    if update.message.reply_to_message and update.message.reply_to_message.from_user:
-        reply_user = update.message.reply_to_message.from_user
-        target_name = resolve_clean_user_name(reply_user, "Користувач")
-        target_id = reply_user.id
-        prof = get_user_history_profile(target_id, reply_user.username or "")
-        if prof:
-            target_lore = prof.get('role', '') or prof.get('style', '')
-
-    response = await get_bugaichyk_roast(target_name, target_lore)
-    await send_safe_html_reply(update, response)
-
-async def judge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /judge або /суд — ШІ-Суддя для срачів з аналізом останніх 20+ повідомлень чату"""
-    if not update.message:
-        return
-
-    chat_id = update.effective_chat.id
-    sender = update.message.from_user
-    user1 = resolve_clean_user_name(sender, "Користувач")
-
-    user2 = None
-    argument_text = ""
-
-    # 1. Спроба витягти user2 з reply
-    if update.message.reply_to_message:
-        reply_msg = update.message.reply_to_message
-        if reply_msg.from_user:
-            user2 = resolve_clean_user_name(reply_msg.from_user)
-        argument_text = (reply_msg.text or reply_msg.caption or "").strip()
-
-    # 2. Аргументи з тексту команди
-    command_args = ""
-    if context.args:
-        command_args = " ".join(context.args).strip()
-    else:
-        text = update.message.text or update.message.caption or ""
-        words = text.strip().split()
-        if len(words) > 1:
-            command_args = " ".join(words[1:]).strip()
-
-    # Згадка @user у command_args
-    if not user2 and "@" in command_args:
-        match = re.search(r'@(\S+)', command_args)
-        if match:
-            raw_u = match.group(1).lstrip('@')
-            user2 = resolve_clean_user_name(raw_name=raw_u)
-
-    # Отримуємо останні 100 повідомлень чату для глибокого аналізу срачу
-    recent_history = get_recent_chat_messages(chat_id, limit=100)
-
-    # 3. Якщо user2 досі не визначено — беремо останнього активного спікера з історії (ігноруючи команди бота)
-    if not user2 and recent_history:
-        lines = recent_history.split('\n')
-        for line in reversed(lines):
-            match = re.search(r'\]\s*([^:]+):\s*(.*)', line)
-            if match:
-                speaker_name = resolve_clean_user_name(raw_name=match.group(1).strip())
-                msg_body = match.group(2).strip()
-                # Ігноруємо службові команди бота
-                if msg_body.startswith(('/', '!')):
-                    continue
-                if speaker_name != user1 and speaker_name not in ("Користувач", "Гравець 1", "Суперник", "Опонент"):
-                    user2 = speaker_name
-                    break
-
-    # 4. Якщо user2 досі немає і суперечки з іншою людиною в історії немає:
-    if not user2 or user2 in ("Суперник", "Опонент", "Користувач", "Гравець 1"):
-        hint = (
-            "⚖️ <b>ЯК ВИКЛИКАТИ ШІ-СУДДЮ ДЛЯ СРАЧУ:</b>\n\n"
-            "📌 <b>Дайте відповідь (reply)</b> на повідомлення вашого опонента і напишіть <code>/judge</code> (або <code>!суд</code>).\n"
-            "📌 Або тегніть опонента в команді: <code>/judge @username чий крим</code>\n\n"
-            "<i>Бугайчик прочитає живі репліки з чату та винесе безкомпромісну українську базу!</i>"
-        )
-        await send_safe_html_reply(update, hint)
-        return
-
-    if command_args:
-        if argument_text:
-            argument_text = f"Повідомлення {user2}: '{argument_text}' | Претензія {user1}: '{command_args}'"
-        else:
-            argument_text = command_args
-
-    if not argument_text:
-        argument_text = "Суперечка про те, хто навалив бази, а хто спіймав крінж"
-
-    verdict_text = await get_bugaichyk_judge(argument_text, user1, user2, recent_history)
-    await send_safe_html_reply(update, verdict_text)
-
-async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /цитата або /quote — Золотий фонд чату з денним лімітом (1 раз на день)"""
-    if not update.message or not update.message.from_user:
-        return
-
-    user_id = update.message.from_user.id
-    success, quote_text = await check_and_get_quote(user_id)
-
-    await send_safe_html_reply(update, quote_text)
+def get_random_risk(user_name: str) -> str:
+    """Вибирає випадкову подію з рулетки та підставляє ім'я користувача"""
+    event = random.choice(RISK_EVENTS)
+    return f"🎰 <b>РП-Рулетка для {user_name}:</b>\n\n{event}"
 
 async def risk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /ризик або /risk — РП-Рулетка"""
+    """Команда /ризик або /risk — РП-Рулетка подій чату"""
     if not update.message:
         return
 
-    user_name = update.message.from_user.first_name if update.message.from_user else "Користувач"
-    risk_text = get_random_risk(user_name)
+    from_user = update.message.from_user
+    user_name = from_user.first_name if from_user else "Користувач"
+    user_link = create_user_link(from_user.id if from_user else 0, user_name)
+
+    risk_text = get_random_risk(user_link)
     await send_safe_html_reply(update, risk_text)
 
