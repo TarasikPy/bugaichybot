@@ -12,6 +12,7 @@ relationships_chats/
 wisdom_chats/
 storage/users_cache.json
 storage/analytics.db
+data/live_analytics.json
 !data/chat_analytics.json
 *.txt
 !requirements.txt
