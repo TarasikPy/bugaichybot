@@ -1,7 +1,6 @@
 """Message dispatcher routing text, aliases, RP actions, and video links."""
 
 import re
-from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -15,23 +14,39 @@ from src.bot.handlers.relationships import (
     relationships_command,
 )
 from src.bot.handlers.weather import weather_command
+from src.core.config import get_settings
 from src.core.logger import get_logger
 from src.infrastructure.constants.aliases import COMMAND_ALIASES
 from src.infrastructure.constants.levels import ALL_COUPLE_COMMANDS
-from src.infrastructure.db.repository import (
-    load_chat_relationships,
-    save_chat_relationships,
-    update_user_cache,
-)
+from src.infrastructure.db.repository import update_user_cache
+from src.services.analytics_buffer import get_analytics_buffer
 from src.services.media_downloader.pipeline import download_and_send_video
 from src.services.rp_service import RPService
 from src.services.user_profiler import (
+    add_chat_recent_message,
     get_all_active_chat_ids,
-    record_live_message,
     rescan_and_sync_analytics,
+    resolve_clean_user_name,
 )
 
 logger = get_logger(__name__)
+
+# Precompiled regex patterns
+_RE_RESCAN = re.compile(r"^(?:!скан|/rescan|!синхрон)", re.IGNORECASE)
+_RE_SAY = re.compile(r"^(?:!пиши|/пиши|/say)\s+(.+)", re.DOTALL | re.IGNORECASE)
+_RE_COMMAND_PREFIX = re.compile(r"^[/\!](\S+)")
+_RE_TARGET_MENTION = re.compile(r"@(\S+)")
+_RE_URL_DETECT = re.compile(r"https?://[^\s>\"]+", re.IGNORECASE)
+
+_VIDEO_KEYWORDS = (
+    "tiktok.com",
+    "instagram.com",
+    "instagr.am",
+    "youtube.com/shorts",
+    "youtu.be",
+    "x.com",
+    "twitter.com",
+)
 
 
 async def _send_html_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) -> None:
@@ -51,18 +66,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     from_user = update.message.from_user
     msg_content = (update.message.text or update.message.caption or "").strip()
+    settings = get_settings()
 
-    # 1. Update user cache
-    if from_user:
+    if from_user and from_user.username:
         first_name = from_user.first_name or from_user.username or "Користувач"
-        if from_user.username:
-            await update_user_cache(from_user.username, first_name, from_user.id)
+        await update_user_cache(from_user.username, first_name, from_user.id)
 
-    # 2. Owner secret commands in private messages (!скан, /rescan, !пиши, /say)
-    if update.effective_chat and update.effective_chat.type == "private":
-        sender_id = from_user.id if from_user else 0
-        if sender_id == 1318789006:
-            if re.match(r"^(?:!скан|/rescan|!синхрон)", msg_content, re.IGNORECASE):
+    if update.effective_chat and update.effective_chat.type == "private" and from_user:
+        if from_user.id in settings.ADMIN_USER_IDS:
+            if _RE_RESCAN.match(msg_content):
                 counts = rescan_and_sync_analytics()
                 info = (
                     "\n".join([f"• <b>{k}</b>: {v} смс" for k, v in counts.items()])
@@ -75,11 +87,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 return
 
-            say_match = re.match(
-                r"^(?:!пиши|/пиши|/say)\s+(.+)",
-                msg_content,
-                re.DOTALL | re.IGNORECASE,
-            )
+            say_match = _RE_SAY.match(msg_content)
             if say_match:
                 broadcast_text = say_match.group(1).strip()
                 target_chats = get_all_active_chat_ids()
@@ -103,51 +111,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     )
                 return
 
-    # 3. Live analytics tracking in storage
-    if from_user and update.effective_chat:
+    if from_user and update.effective_chat and not from_user.is_bot:
         chat_id = update.effective_chat.id
-        try:
-            await record_live_message(chat_id, from_user, msg_content)
+        clean_name = resolve_clean_user_name(from_user)
+        username = from_user.username or ""
 
-            # Update daily_stats in chat relationships JSON
-            chat_data = await load_chat_relationships(chat_id)
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            daily = chat_data.setdefault("daily_stats", {})
+        add_chat_recent_message(chat_id, clean_name, msg_content)
 
-            if daily.get("date") != today_str:
-                daily["date"] = today_str
-                daily["users"] = {}
-
-            users_daily = daily.setdefault("users", {})
-            u_key = str(from_user.id)
-
-            if u_key not in users_daily:
-                users_daily[u_key] = {
-                    "name": from_user.first_name or from_user.username or "Користувач",
-                    "user_id": from_user.id,
-                    "messages": 0,
-                    "chars": 0,
-                }
-
-            users_daily[u_key]["name"] = from_user.first_name or from_user.username or "Користувач"
-            users_daily[u_key]["messages"] += 1
-            users_daily[u_key]["chars"] += len(msg_content)
-
-            await save_chat_relationships(chat_id, chat_data)
-        except Exception as e:
-            logger.warning(f"Error recording live analytics: {e}")
+        buffer = get_analytics_buffer()
+        await buffer.record_message(
+            chat_id=chat_id,
+            user_id=from_user.id,
+            name=clean_name,
+            username=username,
+            text=msg_content,
+        )
 
     if not msg_content:
         return
 
-    # 4. Command and Roleplay processing (starts with / or !)
     if msg_content.startswith("/") or msg_content.startswith("!"):
-        command_match = re.match(r"^[/\!](\S+)", msg_content)
+        command_match = _RE_COMMAND_PREFIX.match(msg_content)
         if command_match:
             raw_cmd = command_match.group(1).lower()
             command = COMMAND_ALIASES.get(raw_cmd, raw_cmd)
 
-            # Routed aliases
             if command == "relationships":
                 await relationships_command(update, context)
                 return
@@ -176,13 +164,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if command in ALL_COUPLE_COMMANDS or command in ("dating", "trio"):
                 target = None
                 if "@" in msg_content:
-                    target_match = re.search(r"@(\S+)", msg_content)
+                    target_match = _RE_TARGET_MENTION.search(msg_content)
                     if target_match:
                         target = target_match.group(1)
                 await handle_couple_command(update, context, command, target)
                 return
 
-            # Free-form RP actions
             try:
                 await update.message.delete()
             except Exception:
@@ -204,22 +191,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await _send_html_message(context, update.effective_chat.id, rp_result)
         return
 
-    # 5. Media URLs detection & download (TikTok / Instagram / Shorts / Twitter / X)
-    raw_urls = re.findall(r"https?://[^\s>\"]+", msg_content, re.IGNORECASE)
-    video_keywords = [
-        "tiktok.com",
-        "instagram.com",
-        "instagr.am",
-        "youtube.com/shorts",
-        "youtu.be",
-        "x.com",
-        "twitter.com",
-    ]
-
+    raw_urls = _RE_URL_DETECT.findall(msg_content)
     for url in raw_urls:
-        if any(kw in url.lower() for kw in video_keywords):
+        if any(kw in url.lower() for kw in _VIDEO_KEYWORDS):
             await download_and_send_video(update, context, url)
             return
 
-    # 6. Silent for all standard chat messages
     return

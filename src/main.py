@@ -1,4 +1,4 @@
-"""Application entrypoint coordinating bot polling and health server lifecycle."""
+"""Application entrypoint coordinating bot polling, analytics buffer, and health server lifecycle."""
 
 import asyncio
 import sys
@@ -11,22 +11,24 @@ from src.bot.app import create_bot_application
 from src.core.config import get_settings
 from src.core.logger import get_logger, setup_logging
 from src.infrastructure.web.health import start_health_server, stop_health_server
+from src.services.analytics_buffer import get_analytics_buffer
 from src.services.http_client import close_http_session
 
 logger = get_logger(__name__)
 
 
 async def run_bot_polling() -> None:
-    """Execute bot polling and handle web health check server in unified asyncio event loop."""
+    """Execute bot polling, analytics buffer, and health check server in unified asyncio loop."""
     settings = get_settings()
     health_runner: web.AppRunner | None = None
+    analytics_buffer = get_analytics_buffer()
 
     try:
-        # 1. Start background health-check server for Render / UptimeRobot
         health_runner = await start_health_server(port=settings.PORT)
+        analytics_buffer.start(interval_seconds=30.0)
 
-        # 2. Polling loop with resilient auto-recovery on 409 Conflict / Network drop
         while True:
+            application = None
             try:
                 application = create_bot_application()
                 await application.initialize()
@@ -53,20 +55,37 @@ async def run_bot_polling() -> None:
                 logger.warning(
                     f"⚠️ Telegram 409 Conflict (previous container is still terminating): {e}. Retrying in 10s..."
                 )
+                if application:
+                    try:
+                        await application.shutdown()
+                    except Exception:
+                        pass
                 await asyncio.sleep(10)
             except NetworkError as e:
                 logger.warning(f"⚠️ Network error: {e}. Retrying in 5s...")
+                if application:
+                    try:
+                        await application.shutdown()
+                    except Exception:
+                        pass
                 await asyncio.sleep(5)
             except Exception as e:
                 logger.error(
                     f"❌ Unexpected error in bot loop: {e}. Retrying in 10s...", exc_info=True
                 )
+                if application:
+                    try:
+                        await application.shutdown()
+                    except Exception:
+                        pass
                 await asyncio.sleep(10)
 
     except asyncio.CancelledError:
         logger.info("Received cancellation signal. Initiating graceful shutdown...")
     finally:
-        # Graceful cleanup
+        # Graceful cleanup in reverse order
+        logger.info("Initiating resource teardown...")
+        await analytics_buffer.stop()
         if health_runner:
             await stop_health_server(health_runner)
         await close_http_session()

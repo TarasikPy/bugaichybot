@@ -2,8 +2,9 @@
 
 import re
 import unicodedata
+from collections import defaultdict, deque
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -19,14 +20,14 @@ from src.infrastructure.db.repository import (
     get_user_name_by_id_sync,
     load_history_analytics,
     load_live_analytics,
-    save_live_analytics,
 )
 from src.infrastructure.utils.formatting import create_user_link, escape_html
+from src.services.analytics_buffer import get_analytics_buffer
 
 logger = get_logger(__name__)
 
 # Cyclic buffer of recent chat messages (up to 50 items per chat)
-_chat_recent_messages: dict[int, list[dict[str, str]]] = {}
+_chat_recent_messages: dict[int, deque[dict[str, str]]] = defaultdict(lambda: deque(maxlen=50))
 
 
 def add_chat_recent_message(chat_id: int, user_name: str, text: str) -> None:
@@ -34,20 +35,17 @@ def add_chat_recent_message(chat_id: int, user_name: str, text: str) -> None:
     if not text or not text.strip():
         return
     text_lower = text.lower()
-    if any(cmd in text_lower for cmd in ["!пиши", "/say", "/пиши"]):
+    if any(cmd in text_lower for cmd in ("!пиши", "/say", "/пиши")):
         return
 
     now_str = datetime.now().strftime("%H:%M")
-    msg_list = _chat_recent_messages.setdefault(chat_id, [])
-    msg_list.append(
+    _chat_recent_messages[chat_id].append(
         {
             "name": user_name,
             "text": text.strip()[:300],
             "time": now_str,
         }
     )
-    if len(msg_list) > 50:
-        _chat_recent_messages[chat_id] = msg_list[-50:]
 
 
 def get_all_active_chat_ids() -> list[int]:
@@ -73,8 +71,8 @@ def get_all_active_chat_ids() -> list[int]:
 def rescan_and_sync_analytics() -> dict[str, int]:
     """Scan accumulated message buffer and return message counts per user."""
     counts: dict[str, int] = {}
-    for msg_list in _chat_recent_messages.values():
-        for m in msg_list:
+    for msg_deque in _chat_recent_messages.values():
+        for m in msg_deque:
             name = m.get("name", "Користувач")
             counts[name] = counts.get(name, 0) + 1
     return counts
@@ -108,7 +106,7 @@ def resolve_clean_user_name(user: Any = None, raw_name: str = "") -> str:
         clean_name = re.sub(r"[^\w\s\-\'’А-Яа-яІіЇїЄєA-Za-z0-9]", "", clean).strip()
         if clean_name:
             return clean_name
-        return user.first_name.strip()
+        return cast(str, user.first_name.strip())
 
     if raw_name and raw_name not in ("Користувач", "Партнер 1", "Партнер 2", "Суперник", "Опонент"):
         clean = unicodedata.normalize("NFKC", raw_name)
@@ -235,75 +233,32 @@ async def resolve_target_user_info(update: Any) -> tuple[int | None, str, str]:
 
 
 async def record_live_message(chat_id: int, user: Any, text_content: str) -> None:
-    """Record live user message activity into storage and recent buffer."""
+    """Record live user message activity through in-memory write-back buffer."""
     if not user or getattr(user, "is_bot", False):
         return
 
-    now_iso = datetime.now().strftime("%H:%M:%S")
     name = resolve_clean_user_name(user)
     username = user.username or ""
-    words_count = len(text_content.split()) if text_content else 0
-    chars_count = len(text_content) if text_content else 0
 
     add_chat_recent_message(chat_id, name, text_content)
 
-    live_data = await load_live_analytics()
-    users = live_data.setdefault("users", {})
-    u_key = str(user.id)
-
-    if u_key not in users:
-        users[u_key] = {
-            "user_id": user.id,
-            "name": name,
-            "username": username,
-            "messages": 0,
-            "chars": 0,
-            "words": 0,
-            "last_active": now_iso,
-            "reactions_given": 0,
-            "reactions_detail": {},
-        }
-
-    u_stat = users[u_key]
-    u_stat["name"] = name
-    if username:
-        u_stat["username"] = username
-    u_stat["messages"] += 1
-    u_stat["chars"] += chars_count
-    u_stat["words"] += words_count
-    u_stat["last_active"] = now_iso
-
-    await save_live_analytics(live_data)
+    buffer = get_analytics_buffer()
+    await buffer.record_message(
+        chat_id=chat_id,
+        user_id=user.id,
+        name=name,
+        username=username,
+        text=text_content,
+    )
 
 
 async def record_live_reaction(chat_id: int, user_id: int, user_name: str, emoji: str) -> None:
-    """Record user reaction into daily live analytics."""
-    if not user_id:
+    """Record user reaction into live buffer."""
+    if not user_id or not emoji:
         return
 
-    live_data = await load_live_analytics()
-    users = live_data.setdefault("users", {})
-    u_key = str(user_id)
-
-    if u_key not in users:
-        users[u_key] = {
-            "user_id": user_id,
-            "name": user_name or "Користувач",
-            "username": "",
-            "messages": 0,
-            "chars": 0,
-            "words": 0,
-            "last_active": datetime.now().strftime("%H:%M:%S"),
-            "reactions_given": 0,
-            "reactions_detail": {},
-        }
-
-    u_stat = users[u_key]
-    u_stat["reactions_given"] = u_stat.get("reactions_given", 0) + 1
-    rx_detail = u_stat.setdefault("reactions_detail", {})
-    rx_detail[emoji] = rx_detail.get(emoji, 0) + 1
-
-    await save_live_analytics(live_data)
+    buffer = get_analytics_buffer()
+    await buffer.record_reaction(chat_id, user_id, user_name, emoji)
 
 
 async def get_user_live_stats(user_id: int) -> dict[str, Any]:
@@ -311,7 +266,7 @@ async def get_user_live_stats(user_id: int) -> dict[str, Any]:
     today_str = datetime.now().strftime("%Y-%m-%d")
     live_data = await load_live_analytics()
     if live_data.get("date") == today_str:
-        return live_data.get("users", {}).get(str(user_id), {})
+        return cast(dict[str, Any], live_data.get("users", {}).get(str(user_id), {}))
     return {}
 
 
@@ -328,7 +283,7 @@ async def get_today_top_users(limit: int = 10) -> list[dict[str, Any]]:
         key=lambda x: (x.get("messages", 0), x.get("chars", 0)),
         reverse=True,
     )
-    return sorted_users[:limit]
+    return cast(list[dict[str, Any]], sorted_users[:limit])
 
 
 def get_user_history_profile(user_id: int, username: str = "") -> dict[str, Any] | None:
@@ -338,7 +293,7 @@ def get_user_history_profile(user_id: int, username: str = "") -> dict[str, Any]
 
     # 1. Search by Telegram ID
     if str(user_id) in profiles:
-        return profiles[str(user_id)]
+        return cast(dict[str, Any], profiles[str(user_id)])
 
     # 2. Search by username
     if username:
@@ -346,13 +301,13 @@ def get_user_history_profile(user_id: int, username: str = "") -> dict[str, Any]
         for p in profiles.values():
             p_uname = (p.get("username") or "").lower()
             if p_uname and (clean_uname in p_uname or p_uname in clean_uname):
-                return p
+                return cast(dict[str, Any], p)
 
-    # 3. Fallback for Maria (ID 6266441947 / 2005833676 / @mashasu / @masha_su)
+    # 3. Fallback for Maria
     if user_id in (6266441947, 2005833676) or (
         username and username.lower() in ("mashasu", "masha_su", "mariai_k")
     ):
-        return profiles.get("2005833676")
+        return cast(dict[str, Any], profiles.get("2005833676"))
 
     return None
 
