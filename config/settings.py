@@ -1,16 +1,8 @@
-import os
-from dotenv import load_dotenv
+"""Legacy configuration bridge forwarding to src.core.config."""
 
-# Завантажуємо змінні з .env
-load_dotenv()
+from src.core.config import get_settings
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
-
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN не знайдено в змінних середовища! Створіть файл .env з BOT_TOKEN.")
-
-if ':' not in BOT_TOKEN or len(BOT_TOKEN.split(':')) != 2:
-    raise ValueError("Неправильний формат BOT_TOKEN! Токен повинен мати формат: ЧИСЛА:ЛІТЕРИ")
-
-DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID", "-1004397346715")
+_s = get_settings()
+BOT_TOKEN = _s.BOT_TOKEN
+WEATHER_API_KEY = _s.WEATHER_API_KEY
+DEFAULT_CHAT_ID = str(_s.DEFAULT_CHAT_ID)
