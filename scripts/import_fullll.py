@@ -1,9 +1,11 @@
 import os
 import json
 import re
+from pathlib import Path
 
-FULLLL_PATH = '/home/taras/Documents/Bugaichyk 3.0/bugaichybot/ФУЛЛЛЛ.txt'
-ANALYTICS_PATH = '/home/taras/Documents/Bugaichyk 3.0/bugaichybot/data/chat_analytics.json'
+BASE_DIR = Path(__file__).resolve().parent.parent
+FULLLL_PATH = BASE_DIR / 'ФУЛЛЛЛ.txt'
+ANALYTICS_PATH = BASE_DIR / 'data' / 'chat_analytics.json'
 
 USER_ID_MAP = {
     "MARIA": (2005833676, "Марія", "mariai_k"),
@@ -29,6 +31,10 @@ USER_ID_MAP = {
     "АБ МАРІЯ ЕСТОНІЯ": (6266441947, "Марія Естонія", "ab"),
     "АБ": (6266441947, "Марія Естонія", "ab")
 }
+
+if not FULLLL_PATH.exists():
+    print(f"Source file {FULLLL_PATH} does not exist. Skipping import.")
+    exit(0)
 
 with open(FULLLL_PATH, 'r', encoding='utf-8') as f:
     text = f.read()

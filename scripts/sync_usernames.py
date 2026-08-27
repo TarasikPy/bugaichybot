@@ -1,8 +1,10 @@
 import os
 import json
+from pathlib import Path
 
-ANALYTICS_PATH = '/home/taras/Documents/Bugaichyk 3.0/bugaichybot/data/chat_analytics.json'
-CACHE_PATH = '/home/taras/Documents/Bugaichyk 3.0/bugaichybot/storage/users_cache.json'
+BASE_DIR = Path(__file__).resolve().parent.parent
+ANALYTICS_PATH = BASE_DIR / 'data' / 'chat_analytics.json'
+CACHE_PATH = BASE_DIR / 'storage' / 'users_cache.json'
 
 USER_MAPPINGS = {
     1318789006: {"name": "Кійотака", "username": "shadow_tar"},
@@ -19,7 +21,7 @@ USER_MAPPINGS = {
 }
 
 # Update chat_analytics.json
-if os.path.exists(ANALYTICS_PATH):
+if ANALYTICS_PATH.exists():
     with open(ANALYTICS_PATH, 'r', encoding='utf-8') as f:
         analytics = json.load(f)
     profiles = analytics.get('profiles', {})
@@ -33,8 +35,9 @@ if os.path.exists(ANALYTICS_PATH):
     print("Updated chat_analytics.json with usernames.")
 
 # Update users_cache.json
+CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
 cache_data = {}
-if os.path.exists(CACHE_PATH):
+if CACHE_PATH.exists():
     try:
         with open(CACHE_PATH, 'r', encoding='utf-8') as f:
             cache_data = json.load(f)

@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bugaichybot"
+version = "3.0.0"
+description = "High-performance Vanilla Telegram community bot featuring clean roleplay mechanics, dating systems, and multi-engine social media video downloader."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Bugaichy Team" }
+]
+dependencies = [
+    "python-telegram-bot[job-queue]>=21.0",
+    "APScheduler>=3.10.4",
+    "aiofiles>=23.2.1",
+    "python-dotenv>=1.0.1",
+    "aiohttp>=3.9.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "yt-dlp>=2024.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.10.0",
+    "ruff>=0.4.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+    "venv",
+    ".venv",
+    "scripts",
+    "relationships_chats",
+    "data",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+    "UP007", # Use X | Y for type annotations
+    "F841",  # local variable assigned but never used
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "venv",
+    ".venv",
+    "scripts",
+    "relationships_chats",
+    "data",
+    "handlers",
+    "storage",
+    "config",
+    "utils",
+]

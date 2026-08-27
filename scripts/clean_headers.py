@@ -1,7 +1,13 @@
 import json
 import re
+from pathlib import Path
 
-ANALYTICS_PATH = '/home/taras/Documents/Bugaichyk 3.0/bugaichybot/data/chat_analytics.json'
+BASE_DIR = Path(__file__).resolve().parent.parent
+ANALYTICS_PATH = BASE_DIR / 'data' / 'chat_analytics.json'
+
+if not ANALYTICS_PATH.exists():
+    print(f"File {ANALYTICS_PATH} does not exist.")
+    exit(0)
 
 with open(ANALYTICS_PATH, 'r', encoding='utf-8') as f:
     data = json.load(f)
@@ -47,14 +53,14 @@ for uid, p in profiles.items():
         old_val = p.get(field, '')
         new_val = clean_field_text(old_val)
         if old_val != new_val:
-            print(f"Cleaned [{p['name']}] field '{field}': removed trailing header tag!")
+            print(f"Cleaned [{p.get('name', uid)}] field '{field}': removed trailing header tag!")
             p[field] = new_val
             cleaned_count += 1
 
     # Rebuild intro and full_text clean
-    intro_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', p['character']) if s.strip()]
-    p['intro'] = " ".join(intro_sentences[:2]) if intro_sentences else p['character'][:200]
-    p['full_text'] = f"🎭 РОЛЬ:\n{p['role']}\n\n📊 СТИЛЬ:\n{p['style']}\n\n🧠 ПСИХОАНАЛІЗ:\n{p['character']}\n\n💡 ТЕМИ:\n{p['topics']}\n\n🗣 СЛЕНГ:\n{p['slang']}\n\n🎯 ПІДКОЛ:\n{p['roast']}"
+    intro_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', p.get('character', '')) if s.strip()]
+    p['intro'] = " ".join(intro_sentences[:2]) if intro_sentences else p.get('character', '')[:200]
+    p['full_text'] = f"🎭 РОЛЬ:\n{p.get('role', '')}\n\n📊 СТИЛЬ:\n{p.get('style', '')}\n\n🧠 ПСИХОАНАЛІЗ:\n{p.get('character', '')}\n\n💡 ТЕМИ:\n{p.get('topics', '')}\n\n🗣 СЛЕНГ:\n{p.get('slang', '')}\n\n🎯 ПІДКОЛ:\n{p.get('roast', '')}"
 
 with open(ANALYTICS_PATH, 'w', encoding='utf-8') as f:
     json.dump(data, f, ensure_ascii=False, indent=2)

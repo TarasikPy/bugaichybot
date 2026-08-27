@@ -1,5 +1,6 @@
 import os
 import re
+from pathlib import Path
 
 USERNAME_MAP = {
     "2005833676": "@Mariai_k",
@@ -16,13 +17,14 @@ USERNAME_MAP = {
     "6266441947": "@ab_maria"
 }
 
+BASE_DIR = Path(__file__).resolve().parent.parent
 files_to_update = [
-    '/home/taras/Documents/Bugaichyk 3.0/bugaichybot/data/users_export/FULL_LORE.txt',
-    '/home/taras/Documents/Bugaichyk 3.0/bugaichybot/ФУЛЛЛЛ.txt'
+    BASE_DIR / 'data' / 'users_export' / 'FULL_LORE.txt',
+    BASE_DIR / 'ФУЛЛЛЛ.txt'
 ]
 
 for filepath in files_to_update:
-    if not os.path.exists(filepath):
+    if not filepath.exists():
         continue
     with open(filepath, 'r', encoding='utf-8') as f:
         text = f.read()
@@ -42,4 +44,4 @@ for filepath in files_to_update:
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(new_text)
 
-print("Updated FULL_LORE.txt and ФУЛЛЛЛ.txt with usernames near IDs!")
+print("Processed available lore files!")
