@@ -10,13 +10,14 @@ from src.infrastructure.constants.levels import (
 from src.infrastructure.db.repository import (
     load_chat_relationships,
 )
+from src.infrastructure.utils.cache import TTLCache
 from src.infrastructure.utils.formatting import create_user_link, format_duration
 from src.services.user_profiler import resolve_user_name_by_id_or_name
 
 logger = get_logger(__name__)
 
-# In-memory cache for proposal sender display names
-PROPOSAL_NAMES_CACHE: dict[int, str] = {}
+# In-memory TTL cache for proposal sender display names (24h expiry, up to 1000 items)
+PROPOSAL_NAMES_CACHE: TTLCache[int, str] = TTLCache(ttl_seconds=86400.0, maxsize=1000)
 
 
 def get_relationship_level(total_points: int) -> int:

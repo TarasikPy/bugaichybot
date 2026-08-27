@@ -12,6 +12,11 @@ from src.infrastructure.db.repository import (
 from src.infrastructure.utils.declension import decline_name
 from src.infrastructure.utils.formatting import create_user_link, escape_html
 
+# Precompiled regex patterns
+_RE_REPLY_ACTION = re.compile(r"^[/\!](\S+)\s*(.*)$", re.DOTALL)
+_RE_MENTION_ACTION = re.compile(r"^[/\!]([^@\s]+?)\s*@([^\s]+)(.*)$", re.DOTALL)
+_RE_STANDALONE_ACTION = re.compile(r"^[/\!](.+)$")
+
 
 class RPService:
     """Service handling parsing, grammatical declension, and formatting of RP actions."""
@@ -25,8 +30,18 @@ class RPService:
         bot_username: str | None = None,
     ) -> str | None:
         """Parse message for custom roleplay action and return formatted response."""
-        if not (message_text.startswith("/") or message_text.startswith("!")):
+        if not message_text or not (message_text.startswith("/") or message_text.startswith("!")):
             return None
+
+        # Clean bot username suffix from command token (e.g. /kiss@BugaichyBot -> /kiss)
+        clean_text = message_text.strip()
+        if bot_username:
+            clean_text = re.sub(
+                rf"^([/\!]\S+?)@{re.escape(bot_username)}(?:\s+|$)",
+                r"\1 ",
+                clean_text,
+                flags=re.IGNORECASE,
+            ).strip()
 
         sender_id = from_user.id if from_user else None
         sender_username = from_user.username.lower() if from_user and from_user.username else ""
@@ -41,7 +56,6 @@ class RPService:
                 else "Користувач"
             )
 
-        # Update cache for sender
         if from_user and from_user.username:
             await update_user_cache(from_user.username, sender_name, sender_id)
 
@@ -50,31 +64,29 @@ class RPService:
         action = ""
         rest_text = ""
 
-        # Case A: Action via Reply to message
         if reply_user:
             target_user_id = reply_user.id
             reply_uname = (reply_user.username or "").lower()
             if reply_uname in USERS_MAP:
                 target_display_name = USERS_MAP[reply_uname]
             else:
-                target_display_name = reply_user.first_name or reply_user.username or "Користувач"
+                target_display_name = (
+                    reply_user.first_name or reply_user.username or "Користувач"
+                )
 
-            match_reply = re.match(r"^[/\!](\S+)\s*(.*)$", message_text, re.DOTALL)
+            match_reply = _RE_REPLY_ACTION.match(clean_text)
             if match_reply:
                 action = match_reply.group(1).strip()
                 rest_text = match_reply.group(2).strip()
 
-        # Case B: Action via @mention or entities
-        elif "@" in message_text:
-            pattern = r"^[/\!]([^@]+?)\s*@([^\s]+)(.*)$"
-            match_mention = re.match(pattern, message_text, re.DOTALL)
+        elif "@" in clean_text:
+            match_mention = _RE_MENTION_ACTION.match(clean_text)
 
             if match_mention:
                 action = match_mention.group(1).strip()
                 raw_target = match_mention.group(2).strip().lstrip("@")
                 rest_text = match_mention.group(3).strip() if match_mention.group(3) else ""
 
-                # Check text_mention in entities
                 if entities:
                     for entity in entities:
                         if entity.type == "text_mention" and entity.user:
@@ -82,11 +94,9 @@ class RPService:
                             target_display_name = entity.user.first_name or entity.user.username
                             break
 
-                # Static USERS_MAP
                 if not target_display_name and raw_target.lower() in USERS_MAP:
                     target_display_name = USERS_MAP[raw_target.lower()]
 
-                # Dynamic cache
                 if not target_user_id or not target_display_name:
                     cached_name, cached_id = await get_first_name_by_username(raw_target)
                     if cached_name and not target_display_name:
@@ -97,9 +107,8 @@ class RPService:
                 if not target_display_name:
                     target_display_name = raw_target
 
-        # Case C: Standalone action without recipient
         else:
-            action_match = re.match(r"^[/\!](.+)$", message_text)
+            action_match = _RE_STANDALONE_ACTION.match(clean_text)
             if action_match:
                 action_text = action_match.group(1).strip()
                 first_word = action_text.split()[0] if action_text.split() else action_text
@@ -111,7 +120,6 @@ class RPService:
         if not action or action in ALL_COUPLE_COMMANDS:
             return None
 
-        # Bot immunity check
         if (
             bot_username
             and target_display_name
@@ -119,7 +127,6 @@ class RPService:
         ):
             return "🤖 На мені не можна виконувати дії!"
 
-        # Grammatical declension
         target_declined = decline_name(target_display_name) if target_display_name else ""
 
         sender_link = create_user_link(sender_id, sender_name)

@@ -30,7 +30,6 @@ def _decline_single_word(word: str) -> str:
             "н",
             "м",
             "р",
-            "t",
             "к",
             "л",
             "с",

@@ -21,8 +21,8 @@ def escape_markdown(text: Any) -> str:
 
 
 def create_user_link(
-    user_id: int | None = None,
-    name: str | None = None,
+    user_id: int | str | None = None,
+    name: str | int | None = None,
     **kwargs: Any,
 ) -> str:
     """Create a clickable HTML link (tg://user?id=...) for a user.
