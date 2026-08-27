@@ -13,9 +13,9 @@ from src.infrastructure.constants.levels import (
 )
 from src.infrastructure.constants.names import USERS_MAP
 from src.infrastructure.db.repository import (
+    chat_relationship_transaction,
     get_first_name_by_username,
     load_chat_relationships,
-    save_chat_relationships,
 )
 from src.infrastructure.utils.formatting import create_user_link
 from src.services.dating_service import (
@@ -154,29 +154,23 @@ async def handle_couple_command(
     command: str,
     target: str | None = None,
 ) -> None:
-    """Handle couple commands and proposals."""
+    """Handle couple commands and proposals with transactional locking."""
     if not update.message or not update.message.from_user or not update.effective_chat:
         return
 
     from_user = update.message.from_user
     chat_id = update.effective_chat.id
-    chat_data = await load_chat_relationships(chat_id)
-    relationships = chat_data.setdefault("relationships", {})
 
-    # 1. /dating or !пропозиція
     if command == "dating":
         target_user_id = None
         target_name = None
         target_username = None
 
-        # Reply
         if update.message.reply_to_message and update.message.reply_to_message.from_user:
             reply_user = update.message.reply_to_message.from_user
             target_user_id = reply_user.id
             target_name = reply_user.first_name
             target_username = reply_user.username
-
-        # Target string or @mention
         elif target or (update.message.text and "@" in update.message.text):
             raw_target = target
             if not raw_target and update.message.text:
@@ -222,7 +216,9 @@ async def handle_couple_command(
             await _send_html_message(context, chat_id, "🤖 З ботом не можна розпочати стосунки!")
             return
 
-        # Check existing relationships
+        chat_data = await load_chat_relationships(chat_id)
+        relationships = chat_data.get("relationships", {})
+
         for c_data in relationships.values():
             if from_user.id in (c_data.get("user1_id"), c_data.get("user2_id")):
                 await _send_html_message(
@@ -242,7 +238,7 @@ async def handle_couple_command(
                 )
                 return
 
-        PROPOSAL_NAMES_CACHE[from_user.id] = from_user.first_name
+        PROPOSAL_NAMES_CACHE.set(from_user.id, from_user.first_name)
         target_spec = str(target_user_id) if target_user_id else f"u_{target_username}"
 
         sender_link = create_user_link(from_user.id, from_user.first_name)
@@ -267,58 +263,62 @@ async def handle_couple_command(
         await _send_html_message(context, chat_id, proposal_text, reply_markup=keyboard)
         return
 
-    # 2. Couple actions (+points)
-    active_couple_id = None
-    couple_info = None
+    msg_to_send: str | None = None
 
-    for c_id, c_data in relationships.items():
-        if from_user.id in (c_data.get("user1_id"), c_data.get("user2_id")):
-            active_couple_id = c_id
-            couple_info = c_data
-            break
+    async with chat_relationship_transaction(chat_id) as chat_data:
+        relationships = chat_data.setdefault("relationships", {})
+        couple_info = None
 
-    if not couple_info:
-        await _send_html_message(
-            context,
-            chat_id,
-            "❌ Ви не перебуваєте в стосунках! Використайте /dating, щоб запропонувати комусь зустрічатися.",
-        )
-        return
+        for _c_id, c_data in relationships.items():
+            if from_user.id in (c_data.get("user1_id"), c_data.get("user2_id")):
+                couple_info = c_data
+                break
 
-    cmd_info = ALL_COUPLE_COMMANDS.get(
-        command, {"action": "провели час разом", "points": 3, "emoji": "💕"}
-    )
-    points_add = cmd_info.get("points", 3)
+        if not couple_info:
+            msg_to_send = (
+                "❌ Ви не перебуваєте в стосунках! "
+                "Використайте /dating, щоб запропонувати комусь зустрічатися."
+            )
+        else:
+            cmd_info = ALL_COUPLE_COMMANDS.get(
+                command, {"action": "провели час разом", "points": 3, "emoji": "💕"}
+            )
+            points_add = cmd_info.get("points", 3)
 
-    old_points = couple_info.get("total_points", 0)
-    new_points = old_points + points_add
-    couple_info["total_points"] = new_points
+            old_points = couple_info.get("total_points", 0)
+            new_points = old_points + points_add
+            couple_info["total_points"] = new_points
 
-    old_level = get_relationship_level(old_points)
-    new_level = get_relationship_level(new_points)
+            old_level = get_relationship_level(old_points)
+            new_level = get_relationship_level(new_points)
 
-    await save_chat_relationships(chat_id, chat_data)
+            p1_link = create_user_link(
+                couple_info.get("user1_id"),
+                couple_info.get("user1_name", "Партнер 1"),
+            )
+            p2_link = create_user_link(
+                couple_info.get("user2_id"),
+                couple_info.get("user2_name", "Партнер 2"),
+            )
 
-    p1_link = create_user_link(
-        couple_info.get("user1_id"),
-        couple_info.get("user1_name", "Партнер 1"),
-    )
-    p2_link = create_user_link(
-        couple_info.get("user2_id"),
-        couple_info.get("user2_name", "Партнер 2"),
-    )
+            msg_to_send = (
+                f"{cmd_info['emoji']} {p1_link} {cmd_info['action']} {p2_link}! "
+                f"(+{points_add} очок, всього: {new_points})"
+            )
 
-    msg = f"{cmd_info['emoji']} {p1_link} {cmd_info['action']} {p2_link}! (+{points_add} очок, всього: {new_points})"
+            if new_level > old_level:
+                level_data = RELATIONSHIP_LEVELS[new_level]
+                msg_to_send += (
+                    f"\n\n🎉 <b>Вітаємо! Новий рівень стосунків:</b> "
+                    f"{level_data['emoji']} <b>{level_data['name']}</b>!"
+                )
 
-    if new_level > old_level:
-        level_data = RELATIONSHIP_LEVELS[new_level]
-        msg += f"\n\n🎉 <b>Вітаємо! Новий рівень стосунків:</b> {level_data['emoji']} <b>{level_data['name']}</b>!"
-
-    await _send_html_message(context, chat_id, msg)
+    if msg_to_send:
+        await _send_html_message(context, chat_id, msg_to_send)
 
 
 async def handle_relationship_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle inline button clicks for dating proposals and breakups."""
+    """Handle inline button clicks for dating proposals and breakups atomically."""
     query = update.callback_query
     if not query or not query.data or not query.message:
         return
@@ -331,8 +331,14 @@ async def handle_relationship_callback(update: Update, context: ContextTypes.DEF
 
     if data.startswith("rel_accept:") or data.startswith("rel_decline:"):
         parts = data.split(":")
+        if len(parts) < 3:
+            return
+
         action_type = parts[0]
-        sender_id = int(parts[1])
+        try:
+            sender_id = int(parts[1])
+        except ValueError:
+            return
         target_spec = parts[2]
 
         if clicker_id == sender_id:
@@ -347,8 +353,11 @@ async def handle_relationship_callback(update: Update, context: ContextTypes.DEF
             target_uname = target_spec[2:].lower()
             is_target = clicker_username == target_uname
         else:
-            target_id = int(target_spec)
-            is_target = (clicker_id == target_id) if target_id != 0 else True
+            try:
+                target_id = int(target_spec)
+                is_target = (clicker_id == target_id) if target_id != 0 else True
+            except ValueError:
+                is_target = False
 
         if not is_target:
             await query.answer(
@@ -361,34 +370,33 @@ async def handle_relationship_callback(update: Update, context: ContextTypes.DEF
         sender_name = PROPOSAL_NAMES_CACHE.get(sender_id, "Користувач")
 
         if action_type == "rel_accept":
-            chat_data = await load_chat_relationships(chat_id)
-            relationships = chat_data.setdefault("relationships", {})
+            async with chat_relationship_transaction(chat_id) as chat_data:
+                relationships = chat_data.setdefault("relationships", {})
 
-            for c_data in relationships.values():
-                if sender_id in (
-                    c_data.get("user1_id"),
-                    c_data.get("user2_id"),
-                ) or clicker_id in (
-                    c_data.get("user1_id"),
-                    c_data.get("user2_id"),
-                ):
-                    await query.edit_message_text(
-                        "💔 Один із користувачів вже перебуває у стосунках!",
-                        parse_mode="HTML",
-                    )
-                    return
+                for c_data in relationships.values():
+                    if sender_id in (
+                        c_data.get("user1_id"),
+                        c_data.get("user2_id"),
+                    ) or clicker_id in (
+                        c_data.get("user1_id"),
+                        c_data.get("user2_id"),
+                    ):
+                        await query.edit_message_text(
+                            "💔 Один із користувачів вже перебуває у стосунках!",
+                            parse_mode="HTML",
+                        )
+                        return
 
-            couple_id = f"{min(sender_id, clicker_id)}_{max(sender_id, clicker_id)}"
-            relationships[couple_id] = {
-                "user1_id": sender_id,
-                "user1_name": sender_name,
-                "user2_id": clicker_id,
-                "user2_name": clicker.first_name,
-                "start_date": datetime.now().isoformat(),
-                "total_points": 0,
-                "status": "dating",
-            }
-            await save_chat_relationships(chat_id, chat_data)
+                couple_id = f"{min(sender_id, clicker_id)}_{max(sender_id, clicker_id)}"
+                relationships[couple_id] = {
+                    "user1_id": sender_id,
+                    "user1_name": sender_name,
+                    "user2_id": clicker_id,
+                    "user2_name": clicker.first_name,
+                    "start_date": datetime.now().isoformat(),
+                    "total_points": 0,
+                    "status": "dating",
+                }
 
             s_link = create_user_link(sender_id, sender_name)
             t_link = create_user_link(clicker_id, clicker.first_name)
@@ -403,29 +411,41 @@ async def handle_relationship_callback(update: Update, context: ContextTypes.DEF
 
     elif data.startswith("breakup_confirm:") or data.startswith("breakup_cancel:"):
         parts = data.split(":")
+        if len(parts) < 3:
+            return
+
         action_type = parts[0]
         couple_id = parts[1]
-        user_id = int(parts[2])
+        try:
+            user_id = int(parts[2])
+        except ValueError:
+            return
 
         if clicker_id != user_id:
             await query.answer("Ця дія стосується не тебе!", show_alert=True)
             return
 
         await query.answer()
-        chat_data = await load_chat_relationships(chat_id)
-        relationships = chat_data.get("relationships", {})
-        couple_data = relationships.get(couple_id, {})
 
         if action_type == "breakup_confirm":
-            if couple_id in relationships:
-                u1_id = couple_data.get("user1_id")
-                u1_name = couple_data.get("user1_name")
-                u2_id = couple_data.get("user2_id")
-                u2_name = couple_data.get("user2_name")
+            u1_id = None
+            u1_name = None
+            u2_id = None
+            u2_name = None
+            was_removed = False
 
-                del relationships[couple_id]
-                await save_chat_relationships(chat_id, chat_data)
+            async with chat_relationship_transaction(chat_id) as chat_data:
+                relationships = chat_data.get("relationships", {})
+                if couple_id in relationships:
+                    couple_data = relationships[couple_id]
+                    u1_id = couple_data.get("user1_id")
+                    u1_name = couple_data.get("user1_name")
+                    u2_id = couple_data.get("user2_id")
+                    u2_name = couple_data.get("user2_name")
+                    del relationships[couple_id]
+                    was_removed = True
 
+            if was_removed:
                 u1_link = create_user_link(u1_id, u1_name)
                 u2_link = create_user_link(u2_id, u2_name)
                 done_text = f"💔 Стосунки між {u1_link} та {u2_link} успішно розірвано."

@@ -3,9 +3,11 @@
 import asyncio
 import json
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Union, cast
 
 import aiofiles
 
@@ -45,8 +47,34 @@ async def _atomic_write_json(file_path: Path, data: Any) -> None:
 
 
 # =========================================================================
-# Relationships Storage
+# Relationships Storage & Transaction Manager
 # =========================================================================
+
+
+@asynccontextmanager
+async def chat_relationship_transaction(chat_id: int) -> AsyncIterator[dict[str, Any]]:
+    """Context manager guaranteeing atomic Read-Modify-Write cycle for chat relationship data."""
+    settings = get_settings()
+    file_path = settings.RELATIONSHIPS_DIR / f"relationships_{chat_id}.json"
+    lock = _get_chat_lock(chat_id)
+
+    async with lock:
+        data: dict[str, Any] = {
+            "chat_info": {"total_relationships": 0},
+            "relationships": {},
+        }
+        if file_path.exists():
+            try:
+                async with aiofiles.open(file_path, encoding="utf-8") as f:
+                    content = await f.read()
+                    data = cast(dict[str, Any], json.loads(content))
+            except Exception as e:
+                logger.warning(f"Error reading relationships for chat {chat_id}: {e}")
+
+        yield data
+
+        # Write mutated state back atomically before releasing lock
+        await _atomic_write_json(file_path, data)
 
 
 async def load_chat_relationships(chat_id: int) -> dict[str, Any]:
@@ -64,7 +92,7 @@ async def load_chat_relationships(chat_id: int) -> dict[str, Any]:
                 }
             async with aiofiles.open(file_path, encoding="utf-8") as f:
                 content = await f.read()
-                return json.loads(content)
+                return cast(dict[str, Any], json.loads(content))
         except (FileNotFoundError, json.JSONDecodeError) as e:
             logger.warning(f"Error reading relationships for chat {chat_id}: {e}")
             return {
@@ -100,7 +128,7 @@ async def load_live_analytics() -> dict[str, Any]:
             if file_path.exists():
                 async with aiofiles.open(file_path, encoding="utf-8") as f:
                     content = await f.read()
-                    data = json.loads(content)
+                    data = cast(dict[str, Any], json.loads(content))
                     if data.get("date") == today_str:
                         return data
         except Exception as e:
@@ -137,7 +165,7 @@ def load_history_analytics() -> dict[str, Any]:
             mtime = os.path.getmtime(file_path)
             if _history_cache is None or mtime > _history_mtime:
                 with open(file_path, encoding="utf-8") as f:
-                    _history_cache = json.load(f)
+                    _history_cache = cast(dict[str, Any], json.load(f))
                 _history_mtime = mtime
             return _history_cache or {}
     except Exception as e:
@@ -156,27 +184,19 @@ def _load_cache_file_sync() -> dict[str, Any]:
     try:
         if file_path.exists():
             with open(file_path, encoding="utf-8") as f:
-                return json.load(f)
+                return cast(dict[str, Any], json.load(f))
     except Exception:
         pass
     return {}
 
 
-def _save_cache_file_sync(data: dict[str, Any]) -> None:
-    settings = get_settings()
-    file_path = settings.STORAGE_DIR / "users_cache.json"
-    try:
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.warning(f"Failed to write user cache: {e}")
-
-
 async def update_user_cache(username: str, first_name: str, user_id: int | None = None) -> None:
-    """Update user metadata mapping in users_cache.json."""
+    """Update user metadata mapping in users_cache.json with atomic persistence."""
     if not first_name:
         return
+
+    settings = get_settings()
+    file_path = settings.STORAGE_DIR / "users_cache.json"
 
     async with _cache_lock:
         data = await asyncio.to_thread(_load_cache_file_sync)
@@ -193,7 +213,7 @@ async def update_user_cache(username: str, first_name: str, user_id: int | None 
         if user_id:
             data[str(user_id)] = first_name
 
-        await asyncio.to_thread(_save_cache_file_sync, data)
+        await _atomic_write_json(file_path, data)
 
 
 async def get_first_name_by_username(
@@ -206,7 +226,8 @@ async def get_first_name_by_username(
     clean_username = username.lstrip("@").lower()
     if clean_username in USERS_MAP:
         name = USERS_MAP[clean_username]
-        data = await asyncio.to_thread(_load_cache_file_sync)
+        async with _cache_lock:
+            data = await asyncio.to_thread(_load_cache_file_sync)
         user_info = data.get(clean_username, {})
         user_id = user_info.get("user_id") if isinstance(user_info, dict) else None
         return name, user_id
@@ -241,5 +262,5 @@ def get_user_name_by_id_sync(user_id: int) -> str:
     if isinstance(val, str):
         return val
     if isinstance(val, dict):
-        return val.get("first_name") or val.get("name") or ""
+        return cast(str, val.get("first_name") or val.get("name") or "")
     return ""
