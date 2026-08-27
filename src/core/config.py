@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     PORT: int = 10000
     LOG_LEVEL: str = "INFO"
     ENVIRONMENT: str = "production"
+    ADMIN_USER_IDS: list[int] = [1318789006]
 
     # Concurrency and Media Downloader Limits
     MAX_CONCURRENT_DOWNLOADS: int = 3
