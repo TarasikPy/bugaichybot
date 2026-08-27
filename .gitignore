@@ -1,25 +1,42 @@
-# Секрети та конфігурації
+# Environment variables & secrets
 .env
+.env.*
+!.env.example
 
-# Python кєш та згенеровані файли
+# Python cache & build artifacts
 __pycache__/
 *.py[cod]
 *$py.class
 *.log
+*.tmp
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
 
-# Дані чатів та локальні БД
+# Dynamic data & runtime databases
 relationships_chats/
 wisdom_chats/
 storage/users_cache.json
 storage/analytics.db
 data/live_analytics.json
 !data/chat_analytics.json
+
+# Temporary files & video downloader buffers
+vanilla_video_*/
+tmp/
+temp/
+
+# Sensitive raw text dumps
 *.txt
 !requirements.txt
 !runtime.txt
-!ФУЛЛЛЛ.txt
 
-# Редактори та середовища
+# IDEs and Virtual Environments
 .vscode/
 .idea/
 venv/
+.venv/
+
