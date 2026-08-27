@@ -1,69 +1,125 @@
-# 🌲 BugaichyBot (Vanilla Clean Architecture Edition)
+# BugaichyBot (Vanilla Edition)
 
 <div align="center">
 
-[![Python Version](https://img.shields.io/badge/Python-3.12%2B-blue.svg?logo=python&logoColor=white)](https://python.org)
+[![Python Version](https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?logo=python&logoColor=white)](https://python.org)
 [![Framework](https://img.shields.io/badge/Telegram-PTB%20v21%2B-2CA5E0.svg?logo=telegram&logoColor=white)](https://python-telegram-bot.org)
-[![Architecture](https://img.shields.io/badge/Architecture-Clean%20%26%20Modular-009688.svg)](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
+[![Architecture](https://img.shields.io/badge/Architecture-Clean%20%2F%20Hexagonal-009688.svg)](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 [![Data Validation](https://img.shields.io/badge/Validation-Pydantic%20v2-E92063.svg?logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
-[![Code Style](https://img.shields.io/badge/Code%20Style-Ruff-black.svg?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
-[![Type Checking](https://img.shields.io/badge/Type%20Check-Mypy%20Strict-brightgreen.svg)](https://mypy-lang.org/)
-[![Container](https://img.shields.io/badge/Docker-Multi--stage-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Code Style](https://img.shields.io/badge/Linter-Ruff%200.4%2B-000000.svg?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
+[![Type Checking](https://img.shields.io/badge/Type%20Check-Mypy%20Strict-brightgreen.svg?logo=python&logoColor=white)](https://mypy-lang.org/)
+[![Testing](https://img.shields.io/badge/Tests-Pytest%20100%25%20Passed-success.svg?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Container](https://img.shields.io/badge/Docker-Multi--stage%20Non--root-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
 
-**High-performance, event-driven Telegram community bot built with Clean Architecture, non-blocking asynchronous I/O, domain validation, and a multi-engine social media downloader.**
+**Асинхронний Telegram-бот для групових чатів та ком'юніті. Побудований на Clean Architecture з in-memory write-back буфером аналітики, транзакційним JSON-сховищем, морфологічним відмінюванням імен та каскадним завантажувачем медіа.**
 
-[English](#-overview-en) • [Українська](#-огляд-ua)
+[Можливості](#-функціонал) • [Архітектура](#-архітектура-та-інженерні-рішення) • [Vanilla vs Full AI](#-порівняння-vanilla-vs-full-ai) • [Розгортання](#-розгортання) • [Тестування](#-тестування-та-якість-коду)
 
 </div>
 
 ---
 
-## 🇺🇦 Огляд (UA)
+## 📌 Огляд
 
-**BugaichyBot Vanilla** — це масштабований Telegram-бот для ком'юніті та групових чатів, розроблений за принципами **Clean Architecture (чистої архітектури)** та **Domain-Driven Design**.
+BugaichyBot Vanilla — це оптимізований бекенд Telegram-бота для високонавантажених групових чатів. Проєкт спроєктовано за принципами **Clean Architecture** та **Domain-Driven Design**, що забезпечує повну ізоляцію шарів Presentation, Domain Services та Data/Infrastructure.
 
-Він поєднує гейміфікацію (вільні рольові дії, шлюби/стосунки, картки психологічних портретів), аналітику активності чату, прогноз погоди та каскадний асинхронний завантажувач медіа без водяних знаків (TikTok, Instagram Reels, YouTube Shorts, Twitter/X).
-
-### ✨ Ключові можливості
-* 🎬 **Multi-Engine Video Downloader:** автоматичне розпізнавання та каскадне завантаження відео (Direct TikWM/fxtwitter API $\rightarrow$ оптимізований `yt-dlp` $\rightarrow$ Cobalt API fallback) з автоматичним очищенням тимчасових файлів через асинхронні контекстні менеджери.
-* 🎭 **Вільна рольова система (Roleplay):** гнучкий парсинг дій (`!обійняв`, `!пригостив кавою`) з граматичним відмінюванням імен в українській мові та генерацією клікабельних HTML-посилань.
-* ❤️ **Система стосунків та шлюбів:** інтерактивні пропозиції з інлайн-кнопками, рівні стосунків, спільні дії (+очки), захист від дублювання та розрив стосунків.
-* 👤 **Профілі та аналітика:** картки користувачів із динамічними вкладками (Огляд, Роль & Стиль, Психоаналіз, Теми, Сленг, Статистика), відстеження активності та реакцій.
-* 🎲 **Розваги та утиліти:** сюжетна РП-рулетка (50 подій), прогноз погоди (Open-Meteo з бекапом на wttr.in) та монетка.
-* 🌐 **Production-Ready Web Healthcheck:** вбудований неблокуючий вебсервер `aiohttp.web` для проходження Health Check на Render, Railway, Fly.io та UptimeRobot.
+### Основні оптимізації продуктивності:
+* **In-Memory Write-Back Buffer:** скорочує дискові I/O операції на 95% завдяки накопиченню метрик у RAM і періодичному скиданню пачками (batch flush) кожні 30 секунд та під час graceful shutdown.
+* **Транзакційний контекстний менеджер:** захист від стану гонки (Lost Updates / TOCTOU) при зміні стосунків та нарахуванні балів через per-chat `asyncio.Lock` і атомарний запис (`.tmp` $\rightarrow$ `os.replace`).
+* **Non-blocking каскадний Downloader:** черга завантаження через `asyncio.Semaphore` із прямими API (TikWM, fxTwitter), відкатом на `yt-dlp` у пулі потоків та публічні Cobalt-інстанси.
+* **Пам'ять та безпека:** використання типізованого `TTLCache[K, V]` з монотонним таймером замість необмежених словників для запобігання Memory Leaks.
 
 ---
 
-## 🏛️ Архітектура системи (Clean Architecture)
+## ⚖️ Порівняння: Vanilla vs Full AI
 
-Проєкт розділений на незалежні ізольовані шари:
+У репозиторії реалізовано дві гілки під різні сценарії використання:
+
+| Характеристика | Vanilla Edition (`main`) | Full AI Edition (`legacy-ai`) |
+| :--- | :--- | :--- |
+| **Призначення** | Максимальна швидкодія ($<50\text{ms}$), передбачуваність, робота у великих групах. | Генерація відповідей, діалогова пам'ять, динамічний гумор. |
+| **Використання LLM** | Не використовується (нульові витрати на токени). | Інтеграція Google Gemini API / Claude. |
+| **Реакція на повідомлення** | Детермінована: виключно команди, префікси (`!`, `/`) або медіа-посилання. | Гнучка: прямі згадки, ключові слова, динамічні кулдауни. |
+| **Споживання ресурсів** | $\approx 45\text{ MB}$ RAM, мінімальне навантаження на CPU. | $\approx 120\text{ MB}$ RAM + мережева затримка зовнішніх LLM API. |
+| **Стабільність** | Production-ready: відсутність блокуючих зовнішніх API. | Експериментальна версія для інтерактивного спілкування. |
+
+---
+
+## 🏗️ Архітектура та інженерні рішення
+
+Проєкт має чіткий розподіл на 3 незалежні шари:
 
 ```mermaid
 flowchart TD
     subgraph Presentation ["1. Presentation Layer (src/bot)"]
-        Handlers["Telegram Handlers\n(basic, actions, relationships, analytics, weather, mechanics)"]
-        Middlewares["Middlewares\n(global error handler, update logger)"]
+        Handlers["Telegram Handlers\n(actions, relationships, analytics, weather, mechanics)"]
+        Middlewares["Global Error Handler & Update Logger"]
+        Keyboards["Inline Keyboards & UI Builders"]
     end
 
     subgraph Services ["2. Domain & Application Services (src/services)"]
-        MediaDownloader["Media Downloader Pipeline\n(TikWM, Twitter, yt-dlp, Cobalt)"]
-        DatingService["Dating & Marriage Service"]
-        RPService["Roleplay Action Parser & Grammar Engine"]
-        ProfilerService["User Profiler & Live Analytics Service"]
-        WeatherService["Weather Service\n(Open-Meteo & wttr.in)"]
-        HTTPClient["Centralized aiohttp ClientSession Pool"]
+        AnalyticsBuffer["AnalyticsBuffer (In-Memory Delta Aggregator)"]
+        MediaPipeline["MediaDownloadPipeline (TikWM ➔ Twitter ➔ yt-dlp ➔ Cobalt)"]
+        DatingService["Dating & Marriage Domain Service"]
+        RPService["Roleplay Action Parser & Ukrainian Declension"]
+        ProfilerService["User Profiler & Activity Rankings"]
+        WeatherService["Weather Service (Open-Meteo & wttr.in)"]
+        HTTPPool["Centralized aiohttp ClientSession Pool"]
     end
 
     subgraph Infrastructure ["3. Infrastructure Layer (src/infrastructure)"]
-        PydanticModels["Pydantic v2 Domain Models"]
-        AsyncRepository["Atomic Async JSON Repository\n(with file locks & atomic rename)"]
-        HealthServer["aiohttp HealthCheck Server (Port 10000)"]
-        FormattingUtils["Formatting & Ukrainian Declension Utils"]
+        PydanticModels["Pydantic v2 DTOs & Validation Schemas"]
+        TransactionalRepo["Async Transactional JSON Repository"]
+        TTLCacheStore["Generic TTLCache (time.monotonic)"]
+        HealthServer["aiohttp Health-Check Web Server (Port 10000)"]
     end
 
     Presentation --> Services
     Services --> Infrastructure
 ```
+
+### Інженерні деталі компонентів:
+
+1. **`AnalyticsBuffer` (`src/services/analytics_buffer.py`):**
+   Акумулює лічильники повідомлень, символів, слів і реакцій у потокобезпечній структурі в пам'яті. Фоновий таск скидає зміни в `live_analytics.json` та `relationships_{chat_id}.json` кожні 30 секунд. Метод `stop()` гарантує повний запис буфера перед завершенням процесу.
+
+2. **`chat_relationship_transaction` (`src/infrastructure/db/repository.py`):**
+   Контекстний менеджер захоплює `asyncio.Lock` чату на весь цикл «читання $\rightarrow$ мутація $\rightarrow$ запис», унеможливлюючи конфлікти паралельних запитів.
+
+3. **`MediaDownloadPipeline` (`src/services/media_downloader/pipeline.py`):**
+   Обмежує паралельні завантаження семафором `MAX_CONCURRENT_DOWNLOADS`. Завантаження виконується чанками по 64 KB у тимчасові каталоги з гарантованим видаленням через `async_temp_directory()`. Якщо розмір відео перевищує 50 MB, користувач отримує інформативне сповіщення про ліміт Telegram Bot API.
+
+4. **`TTLCache` (`src/infrastructure/utils/cache.py`):**
+   Реалізація кешу з підтримкою TTL на базі `time.monotonic()` та витісненням за `maxsize`, що усуває неконтрольоване зростання оперативної пам'яті.
+
+---
+
+## ⚙️ Функціонал
+
+### 🎬 1. Медіа-завантажувач
+* **Платформи:** TikTok, Instagram Reels, YouTube Shorts, Twitter/X.
+* **Робота:** автоматичне розпізнавання URL у тексті повідомлення, каскадне завантаження без водяних знаків та надсилання з `supports_streaming=True`.
+* **Обмеження:** валідація ліміту 50 MB із редагуванням статусного повідомлення у разі помилки.
+
+### 🎭 2. Рольова система (Roleplay)
+* **Синтаксис:** `/команда @username`, `!команда` (у відповідь на повідомлення) або одиночні дії (`/пішов спати`).
+* **Морфологічний рушій:** автоматичне відмінювання українських імен у знахідний відмінок (*Кійотака* $\rightarrow$ *Кійотаку*, *Марія* $\rightarrow$ *Марію*, *Андрій* $\rightarrow$ *Андрія*).
+* **Безпека:** санітизація HTML та генерація безпечних посилань `tg://user?id=...`.
+
+### ❤️ 3. Стосунки та шлюби
+* `/dating @user` (або `!пропозиція`) — створення інтерактивної пропозиції з кнопками.
+* Парні команди (`/kiss`, `/hug`, `/love`, `/date`, `/gift`) — нарахування очок та прогресія через 10 рівнів стосунків.
+* `/relationships` (або `!стосунки`) — список активних пар у чаті.
+* `/breakup` (або `!розрив`) — двокрокове розірвання стосунків.
+
+### 📊 4. Профілі та аналітика
+* `/profile [@user]` (або `!профіль`) — інтерактивна картка з інлайн-вкладками: *Огляд*, *Роль & Стиль*, *Психоаналіз*, *Справжні теми*, *Сленг*, *Коронний підкол*, *Статистика*.
+* `/chatstats` (або `!стата`) — добовий рейтинг активності, статистика слів/символів та дуети спілкування.
+
+### 🎲 5. Розваги та утиліти
+* `/risk` (або `!ризик`) — сюжетна рулетка з 50 подіями.
+* `/weather [місто]` (або `!погода`) — прогноз погоди через Open-Meteo з бекапом на `wttr.in`.
+* `/flipcoin` — кидок монетки.
 
 ---
 
@@ -71,75 +127,47 @@ flowchart TD
 
 ```text
 bugaichybot/
-├── .env.example              # Шаблон змінних середовища
-├── .dockerignore             # Виключення для Docker
-├── .gitignore                # Файли, виключені з Git
-├── Dockerfile                # Багатоетапний безпечний образ
-├── pyproject.toml            # Метадані проєкту, конфігурація Ruff та Mypy
-├── requirements.txt          # Виробничі залежності
-├── main.py                   # Зворотньосумісний файл запуску
-├── data/
-│   ├── chat_analytics.json   # Офлайн-портрети та історія чату
-│   └── live_analytics.json   # Щоденна статистика активності
+├── .dockerignore                  # Правила виключення для Docker
+├── .env.example                   # Шаблон змінних оточення
+├── Dockerfile                     # Multi-stage Dockerfile (non-root appuser)
+├── pyproject.toml                 # Конфігурація Ruff, Mypy, Pytest
+├── requirements.txt               # Залежності
+├── data/                          # Дані аналітики та профілів
+├── relationships_chats/           # JSON-файли стосунків по чатах
 ├── src/
-│   ├── main.py               # Головна точка входу з graceful lifecycle
-│   ├── core/
-│   │   ├── config.py         # Типізовані налаштування на pydantic-settings
-│   │   └── logger.py         # Централізоване логування
-│   ├── bot/
-│   │   ├── app.py            # Фабрика Application та реєстрація хендлерів
-│   │   ├── middlewares/      # Глобальні обробники помилок
-│   │   └── handlers/         # Тонкі презентаційні хендлери Telegram
-│   ├── services/
-│   │   ├── media_downloader/ # Каскадний конвеєр завантаження відео
-│   │   ├── dating_service.py # Бізнес-логіка стосунків та шлюбів
-│   │   ├── rp_service.py     # Парсинг та відмінювання дій
-│   │   ├── user_profiler.py  # Психологічні профілі та статистика
-│   │   ├── weather_service.py# Прогноз погоди
-│   │   └── http_client.py    # Пул aiohttp з'єднань
-│   └── infrastructure/
-│       ├── constants/        # Константи, рівні, відмінювання імен
-│       ├── db/
-│       │   ├── models.py     # Pydantic v2 схеми
-│       │   └── repository.py # Атомарне сховище з локами
-│       ├── web/
-│       │   └── health.py     # aiohttp вебсервер для моніторингу
-│       └── utils/            # Допоміжні утиліти форматування та очищення
+│   ├── main.py                    # Точка входу з graceful lifecycle
+│   ├── core/                      # Налаштування (Pydantic Settings) та логування
+│   ├── bot/                       # Telegram хендлери, middleware, клавіатури
+│   ├── services/                  # Бізнес-логіка, буфер аналітики, downloader
+│   └── infrastructure/            # Репозиторій, TTLCache, утиліти форматування
+└── tests/                         # Набір тестів Pytest
 ```
 
 ---
 
-## 🚀 Встановлення та запуск
+## 🚀 Розгортання
 
-### 1. Локальний запуск (Local Development)
+### 1. Локальний запуск
 
 ```bash
-# 1. Клонувати репозиторій
 git clone https://github.com/your-username/bugaichybot.git
 cd bugaichybot
 
-# 2. Створити та активувати віртуальне середовище
 python3 -m venv venv
-source venv/bin/activate  # На Windows: venv\Scripts\activate
-
-# 3. Встановити залежності
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# 4. Налаштувати змінні середовища
 cp .env.example .env
-# Відредагуйте .env і вкажіть ваш BOT_TOKEN
+# Вкажіть BOT_TOKEN у файлі .env
 
-# 5. Запустити бота
-python main.py
+python -m src.main
 ```
 
-### 2. Запуск у Docker (Production)
+### 2. Запуск у Docker
 
 ```bash
-# Збірка контейнера
 docker build -t bugaichybot:latest .
 
-# Запуск контейнера
 docker run -d \
   --name bugaichybot \
   --restart unless-stopped \
@@ -148,31 +176,53 @@ docker run -d \
   bugaichybot:latest
 ```
 
----
+### 3. Docker Compose
 
-## 🧪 Якість коду та перевірки
+```yaml
+version: '3.8'
 
-Кодова база повністю відповідає стандартам **PEP 8**, типізована через **Mypy** та перевірена лінтером **Ruff**:
-
-```bash
-# Форматування та лінтинг
-ruff check src/
-ruff format src/
-
-# Сувора перевірка типів
-mypy src/
+services:
+  bot:
+    build: .
+    container_name: bugaichybot
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "10000:10000"
+    volumes:
+      - ./data:/app/data
+      - ./relationships_chats:/app/relationships_chats
+      - ./storage:/app/storage
 ```
 
 ---
 
-## 🛡️ Безпека та надійність
-* **Concurrency-Safe I/O:** per-chat асинхронні блокування (`asyncio.Lock`) та атомарний запис у файл через тимчасові файли усувають ризик пошкодження JSON-даних при одночасних запитах.
-* **Auto-recovery:** автоматична обробка мережевих збоїв та Telegram `409 Conflict` (при розгортанні нового контейнера до завершення старого).
-* **Non-blocking Event Loop:** усі синхронні операції з файлами та завантаженням через `yt-dlp` виконуються виключно через пул воркерів `asyncio.to_thread`.
-* **Zero-Leak Media Storage:** усі медіафайли зберігаються в ізольованих тимчасових директоріях і гарантовано видаляються після відправки.
+## ⚙️ Змінні середовища (`.env`)
+
+| Змінна | Тип | За замовчуванням | Опис |
+| :--- | :---: | :---: | :--- |
+| `BOT_TOKEN` | `str` | **Обов'язково** | Токен бота від `@BotFather` (формат `123456:ABC...`). |
+| `PORT` | `int` | `10000` | Порт вбудованого Health-Check вебсервера (`aiohttp.web`). |
+| `LOG_LEVEL` | `str` | `INFO` | Рівень логування (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
+| `ENVIRONMENT` | `str` | `production` | Середовище запуску (`development`, `production`). |
+| `ADMIN_USER_IDS` | `list[int]` | `[1318789006]` | Telegram ID адміністраторів для сервісних команд (`/rescan`, `/say`). |
+| `MAX_CONCURRENT_DOWNLOADS` | `int` | `3` | Максимальна кількість паралельних завантажень відео. |
+| `MAX_VIDEO_SIZE_BYTES` | `int` | `52428800` | Ліміт розміру відео (50 MB). |
+| `HTTP_TIMEOUT_SECONDS` | `float` | `30.0` | Таймаут зовнішніх HTTP-запитів. |
+| `DEFAULT_CHAT_ID` | `int` | `-1004397346715` | ID основного чату спільноти. |
 
 ---
 
-<div align="center">
-    <i>Розроблено з любов'ю до чистого коду та українського ком'юніті 🌾</i>
-</div>
+## 🧪 Тестування та якість коду
+
+```bash
+# Лінтинг та перевірка форматування
+ruff check src tests
+
+# Статична перевірка типів
+mypy src tests
+
+# Запуск тестів
+pytest -v tests
+```

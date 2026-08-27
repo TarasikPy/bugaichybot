@@ -70,9 +70,7 @@ class RPService:
             if reply_uname in USERS_MAP:
                 target_display_name = USERS_MAP[reply_uname]
             else:
-                target_display_name = (
-                    reply_user.first_name or reply_user.username or "Користувач"
-                )
+                target_display_name = reply_user.first_name or reply_user.username or "Користувач"
 
             match_reply = _RE_REPLY_ACTION.match(clean_text)
             if match_reply:
